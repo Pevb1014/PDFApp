@@ -131,7 +131,7 @@ class OverlayTextItem(QGraphicsTextItem):
 
 
 class OverlayImageItem(QGraphicsPixmapItem):
-    def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_replace, on_scale, on_resize) -> None:
+    def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_replace, on_scale, on_resize, on_delete) -> None:
         pix = QPixmap()
         pix.loadFromData(overlay.image_bytes or b"", "PNG")
         w = int((overlay.rect[2] - overlay.rect[0]) * zoom)
@@ -144,6 +144,7 @@ class OverlayImageItem(QGraphicsPixmapItem):
         self.on_replace = on_replace
         self.on_scale = on_scale
         self.on_resize = on_resize
+        self.on_delete = on_delete
         self.setPos(overlay.rect[0] * zoom, overlay.rect[1] * zoom)
         self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -177,6 +178,7 @@ class OverlayImageItem(QGraphicsPixmapItem):
             replace_action = menu.addAction("Reemplazar imagen")
             scale_action = menu.addAction("Re-escalar (%)")
             resize_action = menu.addAction("Ajustar ancho/alto")
+            delete_action = menu.addAction("Eliminar imagen/firma")
             chosen = menu.exec(event.screenPos())
             if chosen == replace_action:
                 self.on_replace(self.overlay.uid)
@@ -184,6 +186,8 @@ class OverlayImageItem(QGraphicsPixmapItem):
                 self.on_scale(self.overlay.uid)
             elif chosen == resize_action:
                 self.on_resize(self.overlay.uid)
+            elif chosen == delete_action:
+                self.on_delete(self.overlay.uid)
             event.accept()
             return
         super().mousePressEvent(event)
@@ -441,8 +445,13 @@ class PDFEditorWindow(QMainWindow):
             on_replace=self._replace_existing_overlay_image,
             on_scale=self._scale_existing_overlay_image,
             on_resize=self._resize_existing_overlay_image,
+            on_delete=self._delete_overlay,
         )
         self.scene.addItem(item)
+
+    def _delete_overlay(self, overlay_uid: str) -> None:
+        self.service.remove_overlay(overlay_uid)
+        self._render_page()
 
     def _find_overlay(self, overlay_uid: str) -> OverlayItem | None:
         for overlay in self.service.list_overlays():
@@ -540,7 +549,7 @@ class PDFEditorWindow(QMainWindow):
                 "2) Haz click sobre la página para insertar el elemento.\n"
                 "3) Arrastra cualquier texto/imagen/firma para posicionarlo exactamente.\n"
                 "4) Doble click en texto para editar contenido. Si queda vacío, se elimina.\n"
-                "5) Click derecho sobre imagen para abrir menú: reemplazar, re-escalar (%) o ajustar ancho/alto.\n"
+                "5) Click derecho sobre imagen/firma para abrir menú: reemplazar, re-escalar (%), ajustar ancho/alto o eliminar.\n"
                 "6) Usa la rueda del mouse sobre una imagen o texto para redimensionar en tiempo real.\n"
                 "7) Doble click en imagen también permite reemplazar por otra.\n"
                 "8) Ajusta tipo de letra, tamaño y color desde la barra antes de insertar o al re-editar texto.\n"
@@ -548,6 +557,18 @@ class PDFEditorWindow(QMainWindow):
                 "10) Cuando termines, pulsa Exportar PDF para generar un archivo nuevo con overlays."
             ),
         )
+
+    def keyPressEvent(self, event):  # type: ignore[override]
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            selected_items = self.scene.selectedItems()
+            if selected_items:
+                for item in selected_items:
+                    if isinstance(item, (OverlayTextItem, OverlayImageItem)):
+                        self.service.remove_overlay(item.overlay.uid)
+                self._render_page()
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
     def _replace_existing_overlay_image(self, overlay_uid: str) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
