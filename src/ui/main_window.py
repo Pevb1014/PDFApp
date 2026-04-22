@@ -50,6 +50,13 @@ class MainWindow(ttk.Frame):
 
         self._configure_styles()
         self._build_ui()
+        self._enable_fullscreen_on_start()
+
+    def _enable_fullscreen_on_start(self) -> None:
+        try:
+            self.master.state("zoomed")
+        except Exception:
+            self.master.attributes("-zoomed", True)
 
     def _configure_styles(self) -> None:
         """Configura los estilos de TTK para un aspecto moderno."""
@@ -175,16 +182,18 @@ class MainWindow(ttk.Frame):
         self.output_text.pack(fill=tk.BOTH, expand=True)
 
         preview_tab = ttk.Frame(self.workspace_notebook, padding=10)
-        self.workspace_notebook.add(preview_tab, text="👁️ Visualizador PDF")
+        self.workspace_notebook.add(preview_tab, text="👁️ Vista")
+        self.preview_tab_index = 1
         preview_tab.rowconfigure(1, weight=1)
         preview_tab.columnconfigure(0, weight=1)
+        self.workspace_notebook.bind("<Button-1>", self._on_notebook_click, add="+")
 
         preview_toolbar = ttk.Frame(preview_tab)
         preview_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        self.preview_title_var = tk.StringVar(value="Selecciona un PDF y pulsa Visualizar.")
+        self.preview_title_var = tk.StringVar(value="Selecciona un archivo de la lista para previsualizar.")
         ttk.Label(preview_toolbar, textvariable=self.preview_title_var).pack(side=tk.LEFT)
-        create_button(preview_toolbar, "✍️ Editar este PDF", self._edit_previewed_pdf, style="Accent.TButton").pack(side=tk.RIGHT)
-        create_button(preview_toolbar, "❎ Cerrar vista", self._clear_preview).pack(side=tk.RIGHT, padx=(0, 6))
+        self.edit_preview_btn = create_button(preview_toolbar, "✍️ Editar este PDF", self._edit_previewed_pdf, style="Accent.TButton")
+        self.edit_preview_btn.pack(side=tk.RIGHT)
 
         viewer_container = ttk.Frame(preview_tab)
         viewer_container.grid(row=1, column=0, sticky="nsew")
@@ -199,6 +208,23 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.bind("<MouseWheel>", self._on_preview_mousewheel)
         self.preview_canvas.bind("<Button-4>", self._on_preview_mousewheel)
         self.preview_canvas.bind("<Button-5>", self._on_preview_mousewheel)
+
+        self.preview_word_text = tk.Text(
+            viewer_container,
+            wrap=tk.WORD,
+            font=("Calibri", 11),
+            bg="#ffffff",
+            relief=tk.FLAT,
+            borderwidth=0,
+        )
+        self.preview_word_text.tag_configure("title", font=("Segoe UI", 12, "bold"), foreground="#1a73e8")
+        self.preview_word_text.tag_configure("heading1", font=("Segoe UI", 14, "bold"))
+        self.preview_word_text.tag_configure("heading2", font=("Segoe UI", 12, "bold"))
+        self.preview_word_text.tag_configure("heading3", font=("Segoe UI", 11, "bold"))
+        self.preview_word_text.tag_configure("bold", font=("Calibri", 11, "bold"))
+        self.preview_word_text.tag_configure("italic", font=("Calibri", 11, "italic"))
+        self.preview_word_text.tag_configure("table", font=("Consolas", 10), foreground="#3c4043")
+        self.preview_word_text.configure(state=tk.DISABLED)
 
         # 3. Barra de estado
         status_bar = ttk.Frame(self, relief=tk.SUNKEN, padding=(10, 2))
@@ -658,10 +684,12 @@ class MainWindow(ttk.Frame):
             self._set_status("Error al visualizar archivo")
 
     def _render_pdf_in_app_viewer(self, input_pdf: Path) -> None:
+        self._set_preview_tab_title(input_pdf.name)
         self.preview_canvas.delete("all")
         self.preview_images = []
         self.preview_current_pdf = input_pdf
         self.preview_title_var.set(f"Vista integrada: {input_pdf.name}")
+        self._show_pdf_preview_mode()
 
         total_pages = self.pdf_service.get_total_pages(input_pdf)
         y_offset = 12
@@ -690,32 +718,62 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.yview_moveto(0)
 
     def _render_word_in_app_viewer(self, input_docx: Path) -> None:
-        self.preview_canvas.delete("all")
+        self._set_preview_tab_title(input_docx.name)
         self.preview_images = []
         self.preview_current_pdf = None
         self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word)")
+        self._show_word_preview_mode()
+        self.preview_word_text.configure(state=tk.NORMAL)
+        self.preview_word_text.delete("1.0", tk.END)
 
         doc = Document(str(input_docx))
-        lines: list[str] = [f"Documento Word: {input_docx.name}", ""]
-        for paragraph in doc.paragraphs:
-            text = paragraph.text.strip()
-            if text:
-                lines.append(text)
-        if len(lines) <= 2:
-            lines.append("[Documento sin texto visible]")
+        self.preview_word_text.insert(tk.END, f"{input_docx.name}\n", "title")
+        self.preview_word_text.insert(tk.END, "-" * max(40, len(input_docx.name)) + "\n\n")
 
-        viewer_text = "\n".join(lines)
-        self.preview_canvas.create_text(
-            16,
-            16,
-            anchor=tk.NW,
-            text=viewer_text,
-            font=("Consolas", 10),
-            fill="#202124",
-            width=max(self.preview_canvas.winfo_width() - 32, 760),
-        )
-        self.preview_canvas.configure(scrollregion=self.preview_canvas.bbox("all"))
-        self.preview_canvas.yview_moveto(0)
+        for paragraph in doc.paragraphs:
+            style_name = (paragraph.style.name or "").lower() if paragraph.style else ""
+            tag = None
+            prefix = ""
+            if style_name.startswith("heading 1"):
+                tag = "heading1"
+            elif style_name.startswith("heading 2"):
+                tag = "heading2"
+            elif style_name.startswith("heading 3"):
+                tag = "heading3"
+            elif "list" in style_name or "bullet" in style_name:
+                prefix = "• "
+
+            if not paragraph.runs:
+                text = paragraph.text.strip()
+                if text:
+                    self.preview_word_text.insert(tk.END, f"{prefix}{text}\n", tag or ())
+                continue
+
+            if prefix:
+                self.preview_word_text.insert(tk.END, prefix)
+            for run in paragraph.runs:
+                run_tags: tuple[str, ...] = ()
+                if run.bold:
+                    run_tags += ("bold",)
+                if run.italic:
+                    run_tags += ("italic",)
+                if tag:
+                    run_tags += (tag,)
+                self.preview_word_text.insert(tk.END, run.text, run_tags)
+            self.preview_word_text.insert(tk.END, "\n")
+
+        for table in doc.tables:
+            self.preview_word_text.insert(tk.END, "\n[Tabla]\n", ("table",))
+            for row in table.rows:
+                row_values = [cell.text.strip().replace("\n", " ") for cell in row.cells]
+                line = " | ".join(value if value else "-" for value in row_values)
+                self.preview_word_text.insert(tk.END, f"{line}\n", ("table",))
+
+        if self.preview_word_text.get("1.0", tk.END).strip() == input_docx.name:
+            self.preview_word_text.insert(tk.END, "[Documento sin contenido textual visible]\n")
+
+        self.preview_word_text.configure(state=tk.DISABLED)
+        self.preview_word_text.yview_moveto(0)
 
     def _on_preview_mousewheel(self, event) -> None:
         if getattr(event, "num", None) == 4:
@@ -741,9 +799,45 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.delete("all")
         self.preview_images = []
         self.preview_current_pdf = None
+        self.preview_word_text.configure(state=tk.NORMAL)
+        self.preview_word_text.delete("1.0", tk.END)
+        self.preview_word_text.configure(state=tk.DISABLED)
         self.preview_title_var.set("Visualización cerrada. Selecciona un archivo de la lista para visualizar.")
+        self._set_preview_tab_title("👁️ Vista")
+        self._show_pdf_preview_mode()
         self.workspace_notebook.select(0)
         self._set_status("Visualización cerrada")
+
+    def _set_preview_tab_title(self, label: str) -> None:
+        trimmed = label if len(label) <= 32 else f"{label[:29]}..."
+        self.workspace_notebook.tab(self.preview_tab_index, text=f"{trimmed}  ✕")
+
+    def _show_word_preview_mode(self) -> None:
+        self.preview_canvas.grid_remove()
+        self.preview_word_text.grid(row=0, column=0, sticky="nsew")
+        self.edit_preview_btn.pack_forget()
+        self.preview_scrollbar.configure(command=self.preview_word_text.yview)
+        self.preview_word_text.configure(yscrollcommand=self.preview_scrollbar.set)
+
+    def _show_pdf_preview_mode(self) -> None:
+        self.preview_word_text.grid_remove()
+        self.preview_canvas.grid(row=0, column=0, sticky="nsew")
+        if not self.edit_preview_btn.winfo_ismapped():
+            self.edit_preview_btn.pack(side=tk.RIGHT)
+        self.preview_scrollbar.configure(command=self.preview_canvas.yview)
+        self.preview_canvas.configure(yscrollcommand=self.preview_scrollbar.set)
+
+    def _on_notebook_click(self, event) -> None:
+        try:
+            tab_id = self.workspace_notebook.index(f"@{event.x},{event.y}")
+        except tk.TclError:
+            return
+        if tab_id != self.preview_tab_index:
+            return
+        x1, y1, width, height = self.workspace_notebook.bbox(tab_id)
+        close_hitbox_start = x1 + width - 20
+        if event.x >= close_hitbox_start and y1 <= event.y <= y1 + height:
+            self._clear_preview()
 
     def _edit_pdf(self) -> None:
         """Abre el editor de PDF avanzado (PyQt6) para edición por superposiciones."""
