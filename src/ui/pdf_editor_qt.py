@@ -337,7 +337,15 @@ class PDFEditorWindow(QMainWindow):
 
     def _edit_existing_overlay_text(self, overlay_uid: str, current_text: str) -> None:
         new_text, ok = QInputDialog.getMultiLineText(self, "Editar texto", "Contenido:", current_text)
-        if not ok or not new_text.strip():
+        if not ok:
             return
-        self.service.update_overlay_text(overlay_uid, new_text.strip(), style=self._style())
+
+        cleaned = new_text.strip()
+        if cleaned == "":
+            self.service.remove_overlay(overlay_uid)
+            self._render_page()
+            return
+
+        # Reaplica estilo actual de toolbar para permitir cambiar fuente/tamaño/color
+        self.service.update_overlay_text(overlay_uid, cleaned, style=self._style())
         self._render_page()

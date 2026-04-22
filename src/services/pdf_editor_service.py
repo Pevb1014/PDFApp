@@ -50,6 +50,9 @@ class PDFEditorService:
                     self._overlays[idx].style = style
                 return
 
+    def remove_overlay(self, overlay_uid: str) -> None:
+        self._overlays = [item for item in self._overlays if item.uid != overlay_uid]
+
     def add_text_overlay(
         self,
         page_index: int,

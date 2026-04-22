@@ -184,7 +184,8 @@ Características principales del editor:
 - `Firmar documento`: firma por texto, imagen PNG o dibujo a mano alzada, con reposicionamiento por arrastre.
 - Las superposiciones se pueden arrastrar con click sostenido para ajustar posición.
 - Doble click sobre un texto agregado para editar su contenido nuevamente.
-- El tipo de letra, tamaño y color se aplican visualmente en el editor a cada texto nuevo/editado.
+- Si en la edición de doble click dejas el texto vacío y aceptas, el overlay se elimina.
+- El tipo de letra, tamaño y color de la barra se aplican también al re-editar textos existentes.
 - Sistema de capas por superposiciones (sin modificar directamente el contenido original).
 - Exportación reconstruyendo PDF base + overlays.
 

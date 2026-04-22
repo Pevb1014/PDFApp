@@ -69,3 +69,15 @@ def test_editor_service_updates_overlay_text_and_style() -> None:
     updated = service.list_overlays()[0]
     assert updated.text == "Texto B"
     assert updated.style.font_size == 18
+
+
+def test_editor_service_remove_overlay() -> None:
+    service = PDFEditorService()
+    overlay = service.add_text_overlay(
+        page_index=0,
+        rect=(10, 10, 100, 40),
+        text="Eliminar",
+        style=OverlayStyle(),
+    )
+    service.remove_overlay(overlay.uid)
+    assert service.list_overlays() == []
