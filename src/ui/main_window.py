@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import base64
+import shutil
+import subprocess
+import sys
+import tempfile
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
@@ -140,10 +145,11 @@ class MainWindow(ttk.Frame):
         # Fila 2: Conversiones
         row2 = ttk.Frame(actions_frame)
         row2.pack(fill=tk.X, pady=(5, 0))
-        row2.columnconfigure((0, 1), weight=1)
+        row2.columnconfigure((0, 1, 2), weight=1)
         
         create_button(row2, "📝 PDF a Word / Extraer", self._extract_content).grid(row=0, column=0, sticky="ew", padx=5)
         create_button(row2, "📘 Word a PDF", self._word_to_pdf).grid(row=0, column=1, sticky="ew", padx=5)
+        create_button(row2, "✍️ Editar / Firmar PDF", self._edit_pdf).grid(row=0, column=2, sticky="ew", padx=5)
 
         # Información del PDF seleccionado
         info_frame = ttk.Frame(content_area, padding=(0, 5))
@@ -617,6 +623,236 @@ class MainWindow(ttk.Frame):
             self._set_status(f"Visualizando {input_pdf.name}")
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
+
+    def _edit_pdf(self) -> None:
+        """Abre el editor de PDF avanzado (PyQt6) para edición por superposiciones."""
+        if not self.loaded_files:
+            messagebox.showwarning("Editar PDF", "No hay archivos cargados.")
+            return
+
+        selected_idx = self._selected_pdf_index()
+        if selected_idx is None:
+            messagebox.showwarning("Editar PDF", "Selecciona un PDF de la lista.")
+            return
+
+        input_pdf = self.loaded_files[selected_idx]
+        if input_pdf.suffix.lower() != ".pdf":
+            messagebox.showwarning("Editar PDF", "La edición solo está disponible para archivos PDF.")
+            return
+
+        try:
+            subprocess.Popen([sys.executable, "-m", "src.ui.pdf_editor_app", str(input_pdf)])
+            self._set_status(f"Editor PDF abierto para {input_pdf.name}")
+        except Exception as exc:
+            messagebox.showerror("Error", human_error(exc))
+            self._set_status("Error al abrir editor PDF")
+
+    def _open_pdf_edit_dialog(self, input_pdf: Path) -> None:
+        """Diálogo gráfico para visualizar y editar el PDF seleccionado."""
+        dialog = tk.Toplevel(self)
+        dialog.title(f"✍️ Editor PDF - {input_pdf.name}")
+        dialog.geometry("1100x760")
+        dialog.grab_set()
+
+        total_pages = self.pdf_service.get_total_pages(input_pdf)
+        temp_dir = Path(tempfile.mkdtemp(prefix="pdf_editor_"))
+        working_pdf = temp_dir / "working.pdf"
+        shutil.copy2(input_pdf, working_pdf)
+
+        mode_var = tk.StringVar(value="replace")
+        page_var = tk.IntVar(value=1)
+        signature_image_var = tk.StringVar(value="")
+        clicked_pdf_coords: dict[str, float] = {"x": 72.0, "y": 72.0}
+        render_meta: dict[str, float] = {"img_w": 1.0, "img_h": 1.0, "pdf_w": 1.0, "pdf_h": 1.0}
+
+        main = ttk.Frame(dialog, padding=10)
+        main.pack(fill=tk.BOTH, expand=True)
+        main.columnconfigure(0, weight=3)
+        main.columnconfigure(1, weight=2)
+        main.rowconfigure(0, weight=1)
+
+        preview_frame = ttk.LabelFrame(main, text="Vista previa del PDF", padding=10)
+        preview_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        preview_frame.rowconfigure(1, weight=1)
+        preview_frame.columnconfigure(0, weight=1)
+
+        top_bar = ttk.Frame(preview_frame)
+        top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(top_bar, text=f"Página (1-{total_pages}):").pack(side=tk.LEFT)
+        ttk.Spinbox(top_bar, from_=1, to=total_pages, textvariable=page_var, width=6).pack(
+            side=tk.LEFT, padx=(6, 8)
+        )
+        ttk.Label(top_bar, text="Selecciona modo y haz click en el PDF.").pack(side=tk.LEFT, padx=(8, 0))
+
+        canvas = tk.Canvas(preview_frame, bg="#f4f4f4", highlightthickness=0)
+        canvas.grid(row=1, column=0, sticky="nsew")
+        page_text = scrolledtext.ScrolledText(preview_frame, height=8, font=("Consolas", 9))
+        page_text.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+
+        controls = ttk.LabelFrame(main, text="Configuración de edición", padding=10)
+        controls.grid(row=0, column=1, sticky="nsew")
+        controls.columnconfigure(1, weight=1)
+
+        ttk.Label(controls, text="Operación:").grid(row=0, column=0, sticky="w", pady=4)
+        mode_combo = ttk.Combobox(
+            controls,
+            textvariable=mode_var,
+            values=["replace", "add", "sign", "edit_click", "image"],
+            state="readonly",
+        )
+        mode_combo.grid(row=0, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Buscar texto (replace global):").grid(row=1, column=0, sticky="w", pady=4)
+        search_entry = ttk.Entry(controls)
+        search_entry.grid(row=1, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Reemplazar por:").grid(row=2, column=0, sticky="w", pady=4)
+        replace_entry = ttk.Entry(controls)
+        replace_entry.grid(row=2, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Texto para add/edit_click:").grid(row=3, column=0, sticky="w", pady=4)
+        add_text_entry = ttk.Entry(controls)
+        add_text_entry.grid(row=3, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Firmante (modo sign):").grid(row=4, column=0, sticky="w", pady=4)
+        signer_entry = ttk.Entry(controls)
+        signer_entry.grid(row=4, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Imagen (sign/image):").grid(row=5, column=0, sticky="w", pady=4)
+        ttk.Entry(controls, textvariable=signature_image_var).grid(row=5, column=1, sticky="ew", pady=4)
+        click_info = ttk.Label(controls, text="Posición click PDF: x=72.0, y=72.0")
+        click_info.grid(row=6, column=0, columnspan=2, sticky="w", pady=4)
+
+        def select_signature_image() -> None:
+            chosen = filedialog.askopenfilename(
+                title="Selecciona imagen de firma",
+                filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.bmp")],
+            )
+            if chosen:
+                signature_image_var.set(chosen)
+
+        create_button(controls, "Seleccionar imagen", select_signature_image).grid(
+            row=7, column=1, sticky="e", pady=(4, 8)
+        )
+
+        def refresh_preview() -> None:
+            current_page = page_var.get()
+            image_bytes = self.pdf_service.render_pdf_page_preview(working_pdf, page_number=current_page, zoom=1.0)
+            encoded = base64.b64encode(image_bytes).decode("ascii")
+            photo = tk.PhotoImage(data=encoded)
+            canvas.delete("all")
+            canvas.create_image(0, 0, anchor=tk.NW, image=photo)
+            canvas.image = photo
+            canvas.configure(scrollregion=(0, 0, photo.width(), photo.height()))
+
+            pdf_w, pdf_h = self.pdf_service.get_page_size(working_pdf, page_number=current_page)
+            render_meta["img_w"] = float(photo.width())
+            render_meta["img_h"] = float(photo.height())
+            render_meta["pdf_w"] = pdf_w
+            render_meta["pdf_h"] = pdf_h
+
+            extracted = self.pdf_service.extract_text_from_page(working_pdf, page_number=current_page) or "[Sin texto]"
+            page_text.delete("1.0", tk.END)
+            page_text.insert(tk.END, extracted)
+
+        def apply_click_action() -> None:
+            temp_out = temp_dir / "working_next.pdf"
+            try:
+                mode = mode_var.get()
+                if mode == "replace":
+                    self.pdf_service.replace_text_in_pdf(
+                        input_path=working_pdf,
+                        output_path=temp_out,
+                        search_text=search_entry.get().strip(),
+                        replace_text=replace_entry.get().strip(),
+                    )
+                elif mode == "add":
+                    self.pdf_service.add_text_to_pdf(
+                        input_path=working_pdf,
+                        output_path=temp_out,
+                        text=add_text_entry.get().strip(),
+                        page_number=page_var.get(),
+                        x=clicked_pdf_coords["x"],
+                        y=clicked_pdf_coords["y"],
+                    )
+                elif mode == "sign":
+                    signature_image = signature_image_var.get().strip()
+                    self.pdf_service.sign_pdf_at_position(
+                        input_path=working_pdf,
+                        output_path=temp_out,
+                        signer_name=signer_entry.get().strip(),
+                        page_number=page_var.get(),
+                        x=clicked_pdf_coords["x"],
+                        y=clicked_pdf_coords["y"],
+                        signature_image_path=Path(signature_image) if signature_image else None,
+                    )
+                elif mode == "image":
+                    image_path = signature_image_var.get().strip()
+                    self.pdf_service.insert_image_to_pdf(
+                        input_path=working_pdf,
+                        output_path=temp_out,
+                        image_path=Path(image_path),
+                        page_number=page_var.get(),
+                        x=clicked_pdf_coords["x"],
+                        y=clicked_pdf_coords["y"],
+                    )
+                else:
+                    self.pdf_service.replace_text_at_position(
+                        input_path=working_pdf,
+                        output_path=temp_out,
+                        page_number=page_var.get(),
+                        x=clicked_pdf_coords["x"],
+                        y=clicked_pdf_coords["y"],
+                        replacement_text=add_text_entry.get().strip(),
+                    )
+
+                temp_out.replace(working_pdf)
+                refresh_preview()
+                self._set_status("Edición aplicada en vista previa")
+            except Exception as exc:
+                messagebox.showerror("Error", human_error(exc))
+                self._set_status("Error al aplicar edición")
+
+        def save_edited_pdf() -> None:
+            output_path_raw = filedialog.asksaveasfilename(
+                title="Guardar PDF editado",
+                defaultextension=".pdf",
+                initialfile=f"{input_pdf.stem}_editado.pdf",
+                filetypes=[("PDF files", "*.pdf")],
+            )
+            if not output_path_raw:
+                return
+            output_path = self.file_service.prepare_output_path(str(ensure_pdf_extension(output_path_raw)))
+            shutil.copy2(working_pdf, output_path)
+            self._set_status(f"PDF editado: {output_path.name}")
+            messagebox.showinfo("Éxito", f"Archivo generado:\n{output_path}")
+
+        def on_canvas_click(event) -> None:
+            if render_meta["img_w"] <= 0 or render_meta["img_h"] <= 0:
+                return
+            x_img = min(max(event.x, 0), int(render_meta["img_w"]))
+            y_img = min(max(event.y, 0), int(render_meta["img_h"]))
+            pdf_x = (x_img / render_meta["img_w"]) * render_meta["pdf_w"]
+            pdf_y = (y_img / render_meta["img_h"]) * render_meta["pdf_h"]
+            clicked_pdf_coords["x"] = pdf_x
+            clicked_pdf_coords["y"] = pdf_y
+            click_info.configure(text=f"Posición click PDF: x={pdf_x:.1f}, y={pdf_y:.1f}")
+            apply_click_action()
+
+        canvas.bind("<Button-1>", on_canvas_click)
+
+        action_row = ttk.Frame(controls)
+        action_row.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        create_button(action_row, "Actualizar vista", refresh_preview).pack(side=tk.LEFT, padx=(0, 6))
+        create_button(action_row, "Guardar como", save_edited_pdf, style="Primary.TButton").pack(side=tk.LEFT)
+
+        refresh_preview()
+
+        def on_close() -> None:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            dialog.destroy()
+
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
 
     def _ask_split_options(self, input_pdf: Path) -> dict[str, int | str | None] | None:
         """Muestra el diálogo para configurar la división de un PDF con campos dinámicos."""

@@ -64,6 +64,7 @@ pyinstaller --noconfirm --clean --onefile --windowed --name PDFProcessor main.py
 - **Interfaz Moderna**: UI renovada con estilos personalizados, iconos y disposición mejorada.
 - **Procesamiento por Lotes**: Extraer contenido o convertir a Word múltiples PDFs simultáneamente.
 - **Conversión Inversa**: Convertir uno o varios archivos Word (.docx) a PDF.
+- **Edición de PDF**: Reemplazar texto existente, agregar contenido y añadir firma visible (texto e imagen opcional).
 - Cargar uno o múltiples PDFs.
 - Listado de PDFs cargados.
 - Reordenar manualmente la lista (Subir/Bajar) para decidir un orden exacto de unión.
@@ -165,3 +166,33 @@ Después de convertir con `pdf2docx`, la app aplica limpieza de layout:
 - Fuerza flujo vertical legible (separación visual antes/después de imágenes).
 - Evita superposición texto/imagen moviendo imágenes a párrafos dedicados cuando es necesario.
 - Ajusta automáticamente imágenes grandes al ancho máximo aproximado de página (~6 in), manteniendo proporción.
+
+
+## Edición y firma de PDF
+La app incluye un editor de escritorio avanzado (PyQt6 + PyMuPDF) accesible desde **"✍️ Editar / Firmar PDF"**:
+
+1. `replace`: reemplaza un texto por otro en todo el documento.
+2. `add`: agrega texto directamente donde haces click en la vista del PDF.
+3. `edit_click`: reemplaza la palabra ubicada en la posición clicada.
+4. `image`: inserta una imagen en la posición clicada.
+5. `sign`: añade firma visible (texto + imagen opcional) justo en la posición clicada.
+
+Características principales del editor:
+- Renderizado visual de página PDF en lienzo desplazable.
+- Modos visibles en UI: **Agregar texto nuevo**, **Insertar imagen**, **Firmar documento**.
+- `Agregar texto nuevo`: inserta texto como superposición y luego puedes moverlo visualmente.
+- `Insertar imagen`: añade imágenes al PDF como overlay, con arrastre y redimensión.
+- `Firmar documento`: firma por texto, imagen PNG o dibujo a mano alzada, con reposicionamiento por arrastre.
+- Las superposiciones se pueden arrastrar con click sostenido para ajustar posición.
+- Doble click sobre un texto agregado para editar su contenido nuevamente.
+- Doble click sobre una imagen para abrir opciones avanzadas: reemplazar, re-escalar (%) o ajustar ancho/alto.
+- También puedes redimensionar imágenes usando la rueda del mouse sobre la imagen.
+- Si en la edición de doble click dejas el texto vacío y aceptas, el overlay se elimina.
+- El tipo de letra, tamaño y color de la barra se aplican también al re-editar textos existentes.
+- Desde el botón **Instrucciones** en la barra del editor puedes ver una guía rápida de uso.
+- Sistema de capas por superposiciones (sin modificar directamente el contenido original).
+- Exportación reconstruyendo PDF base + overlays.
+
+Notas:
+- La edición genera un PDF nuevo (no sobrescribe el original automáticamente).
+- Para firma con imagen se aceptan formatos comunes (`.png`, `.jpg`, `.jpeg`, `.bmp`).
