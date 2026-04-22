@@ -1,0 +1,187 @@
+from pathlib import Path
+
+import pytest
+
+pypdf = pytest.importorskip("pypdf")
+PdfReader = pypdf.PdfReader
+PdfWriter = pypdf.PdfWriter
+
+docx = pytest.importorskip("docx")
+Document = docx.Document
+
+from src.services.pdf_service import PDFService
+
+
+def _make_pdf(path: Path, pages: int, width: int = 200) -> None:
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=width, height=200)
+    with path.open("wb") as f:
+        writer.write(f)
+
+
+def test_merge_and_split(tmp_path: Path) -> None:
+    pdf_1 = tmp_path / "a.pdf"
+    pdf_2 = tmp_path / "b.pdf"
+    _make_pdf(pdf_1, 1)
+    _make_pdf(pdf_2, 2)
+
+    service = PDFService()
+    merged = tmp_path / "merged.pdf"
+    service.merge_pdfs([pdf_1, pdf_2], merged)
+    assert merged.exists()
+
+    split_dir = tmp_path / "split"
+    parts = service.split_pdf(merged, split_dir)
+    assert len(parts) == 3
+    assert all(p.exists() for p in parts)
+
+
+def test_merge_respects_custom_order(tmp_path: Path) -> None:
+    pdf_first = tmp_path / "first.pdf"
+    pdf_second = tmp_path / "second.pdf"
+    pdf_third = tmp_path / "third.pdf"
+    _make_pdf(pdf_first, pages=1, width=100)
+    _make_pdf(pdf_second, pages=1, width=200)
+    _make_pdf(pdf_third, pages=1, width=300)
+
+    service = PDFService()
+    merged = tmp_path / "ordered.pdf"
+    service.merge_pdfs([pdf_third, pdf_first, pdf_second], merged)
+
+    reader = PdfReader(str(merged))
+    widths = [int(page.mediabox.width) for page in reader.pages]
+    assert widths == [300, 100, 200]
+
+
+def test_split_by_parts_distributes_pages_evenly(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=9)
+
+    service = PDFService()
+    output_dir = tmp_path / "parts"
+    generated = service.split_pdf_by_parts(input_pdf, output_dir, num_parts=2)
+
+    assert len(generated) == 2
+    page_counts = [len(PdfReader(str(path)).pages) for path in generated]
+    assert page_counts == [5, 4]
+
+
+def test_split_by_parts_validates_limits(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=3)
+
+    service = PDFService()
+    with pytest.raises(ValueError):
+        service.split_pdf_by_parts(input_pdf, tmp_path / "out", num_parts=4)
+
+
+def test_get_total_pages(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=7)
+
+    service = PDFService()
+    assert service.get_total_pages(input_pdf) == 7
+
+
+def test_extract_multiple_ranges_generates_one_pdf_per_range(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=30)
+
+    service = PDFService()
+    out_dir = tmp_path / "ranges"
+    generated = service.extract_page_ranges(input_pdf, out_dir, "2-14, 16-18, 20-29")
+
+    assert len(generated) == 3
+    page_counts = [len(PdfReader(str(path)).pages) for path in generated]
+    assert page_counts == [13, 3, 10]
+
+
+def test_parse_ranges_rejects_overlap_and_invalid_ranges(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=10)
+    service = PDFService()
+
+    with pytest.raises(ValueError):
+        service.parse_page_ranges("2-5, 4-6", total_pages=10)
+
+    with pytest.raises(ValueError):
+        service.parse_page_ranges("8-3", total_pages=10)
+
+    with pytest.raises(ValueError):
+        service.parse_page_ranges("1-11", total_pages=10)
+
+
+def test_extract_text_and_images_creates_text_file(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=2)
+
+    service = PDFService()
+    result = service.extract_text_and_images(input_pdf, tmp_path / "content")
+
+    text_file = Path(result["text_file"])
+    images_dir = Path(result["images_dir"])
+    assert text_file.exists()
+    assert images_dir.exists()
+
+
+def test_convert_pdf_to_docx_creates_file(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=1)
+
+    service = PDFService()
+    output_docx = tmp_path / "out.docx"
+    service.convert_pdf_to_docx(input_pdf, output_docx)
+
+    assert output_docx.exists()
+    loaded = Document(str(output_docx))
+    assert len(loaded.paragraphs) >= 1
+
+
+def test_extract_text_and_images_requires_pillow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=1)
+
+    service = PDFService()
+    monkeypatch.setattr(service, "_image_extraction_available", lambda: False)
+
+    with pytest.raises(RuntimeError):
+        service.extract_text_and_images(input_pdf, tmp_path / "content")
+
+
+def test_convert_docx_without_pillow_does_not_fail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=1)
+
+    service = PDFService()
+    monkeypatch.setattr(service, "_image_extraction_available", lambda: False)
+
+    output_docx = tmp_path / "without_pillow.docx"
+    service.convert_pdf_to_docx(input_pdf, output_docx)
+
+    loaded = Document(str(output_docx))
+    assert any("Imágenes omitidas" in p.text for p in loaded.paragraphs)
+
+
+def test_convert_pdf_to_docx_advanced_mode_creates_file(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=1)
+
+    service = PDFService()
+    output_docx = tmp_path / "advanced.docx"
+    service.convert_pdf_to_docx(input_pdf, output_docx, mode="advanced")
+
+    assert output_docx.exists()
+
+
+def test_convert_pdf_to_docx_advanced_fallbacks_when_pdf2docx_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf, pages=1)
+
+    service = PDFService()
+    monkeypatch.setattr(service, "_convert_pdf_to_docx_pdf2docx", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    output_docx = tmp_path / "fallback.docx"
+    service.convert_pdf_to_docx(input_pdf, output_docx, mode="advanced")
+
+    assert output_docx.exists()
