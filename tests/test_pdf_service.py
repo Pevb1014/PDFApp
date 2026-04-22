@@ -8,6 +8,7 @@ PdfWriter = pypdf.PdfWriter
 
 docx = pytest.importorskip("docx")
 Document = docx.Document
+fitz = pytest.importorskip("fitz")
 
 from src.services.pdf_service import PDFService
 
@@ -18,6 +19,14 @@ def _make_pdf(path: Path, pages: int, width: int = 200) -> None:
         writer.add_blank_page(width=width, height=200)
     with path.open("wb") as f:
         writer.write(f)
+
+
+def _make_text_pdf(path: Path, text: str) -> None:
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    doc.save(str(path))
+    doc.close()
 
 
 def test_merge_and_split(tmp_path: Path) -> None:
@@ -191,3 +200,45 @@ def test_convert_pdf_to_docx_advanced_fallbacks_when_pdf2docx_fails(tmp_path: Pa
     service.convert_pdf_to_docx(input_pdf, output_docx, mode="advanced")
 
     assert output_docx.exists()
+
+
+def test_replace_text_in_pdf_generates_output_with_replacement(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "source_text.pdf"
+    output_pdf = tmp_path / "replaced.pdf"
+    _make_text_pdf(input_pdf, "Hola mundo")
+
+    service = PDFService()
+    service.replace_text_in_pdf(input_pdf, output_pdf, "Hola", "Hello")
+
+    doc = fitz.open(str(output_pdf))
+    text = "\n".join(page.get_text() for page in doc)
+    doc.close()
+    assert "Hello" in text
+
+
+def test_add_text_to_pdf_inserts_text_on_selected_page(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "base.pdf"
+    output_pdf = tmp_path / "with_text.pdf"
+    _make_pdf(input_pdf, pages=1)
+
+    service = PDFService()
+    service.add_text_to_pdf(input_pdf, output_pdf, text="Texto agregado", page_number=1, x=72, y=72)
+
+    doc = fitz.open(str(output_pdf))
+    text = doc[0].get_text()
+    doc.close()
+    assert "Texto agregado" in text
+
+
+def test_sign_pdf_adds_visible_signature_text(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "unsigned.pdf"
+    output_pdf = tmp_path / "signed.pdf"
+    _make_pdf(input_pdf, pages=1)
+
+    service = PDFService()
+    service.sign_pdf(input_pdf, output_pdf, signer_name="Ana Perez", page_number=1)
+
+    doc = fitz.open(str(output_pdf))
+    text = doc[0].get_text()
+    doc.close()
+    assert "Firmado por: Ana Perez" in text

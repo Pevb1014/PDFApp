@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 
 from src.services.file_service import FileService
 from src.services.pdf_service import PDFService
@@ -140,10 +140,11 @@ class MainWindow(ttk.Frame):
         # Fila 2: Conversiones
         row2 = ttk.Frame(actions_frame)
         row2.pack(fill=tk.X, pady=(5, 0))
-        row2.columnconfigure((0, 1), weight=1)
+        row2.columnconfigure((0, 1, 2), weight=1)
         
         create_button(row2, "📝 PDF a Word / Extraer", self._extract_content).grid(row=0, column=0, sticky="ew", padx=5)
         create_button(row2, "📘 Word a PDF", self._word_to_pdf).grid(row=0, column=1, sticky="ew", padx=5)
+        create_button(row2, "✍️ Editar / Firmar PDF", self._edit_pdf).grid(row=0, column=2, sticky="ew", padx=5)
 
         # Información del PDF seleccionado
         info_frame = ttk.Frame(content_area, padding=(0, 5))
@@ -617,6 +618,127 @@ class MainWindow(ttk.Frame):
             self._set_status(f"Visualizando {input_pdf.name}")
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
+
+    def _edit_pdf(self) -> None:
+        """Permite editar texto existente, agregar contenido y firmar un PDF."""
+        selected_idx = self._selected_pdf_index()
+        if selected_idx is None:
+            messagebox.showwarning("Editar PDF", "Selecciona un PDF de la lista.")
+            return
+
+        input_pdf = self.loaded_files[selected_idx]
+        if input_pdf.suffix.lower() != ".pdf":
+            messagebox.showwarning("Editar PDF", "La edición solo está disponible para archivos PDF.")
+            return
+
+        options = self._ask_pdf_edit_options()
+        if not options:
+            return
+
+        output_path_raw = filedialog.asksaveasfilename(
+            title="Guardar PDF editado",
+            defaultextension=".pdf",
+            initialfile=f"{input_pdf.stem}_editado.pdf",
+            filetypes=[("PDF files", "*.pdf")],
+        )
+        if not output_path_raw:
+            return
+
+        output_path = self.file_service.prepare_output_path(str(ensure_pdf_extension(output_path_raw)))
+
+        try:
+            mode = options["mode"]
+            if mode == "replace":
+                res = self.pdf_service.replace_text_in_pdf(
+                    input_path=input_pdf,
+                    output_path=output_path,
+                    search_text=str(options["search_text"]),
+                    replace_text=str(options["replace_text"]),
+                )
+            elif mode == "add":
+                res = self.pdf_service.add_text_to_pdf(
+                    input_path=input_pdf,
+                    output_path=output_path,
+                    text=str(options["text"]),
+                    page_number=int(options["page_number"]),
+                    x=float(options["x"]),
+                    y=float(options["y"]),
+                )
+            else:
+                res = self.pdf_service.sign_pdf(
+                    input_path=input_pdf,
+                    output_path=output_path,
+                    signer_name=str(options["signer_name"]),
+                    page_number=int(options["page_number"]) if options["page_number"] else None,
+                    signature_image_path=Path(str(options["signature_image_path"]))
+                    if options.get("signature_image_path")
+                    else None,
+                )
+
+            self._set_status(f"PDF editado: {res.name}")
+            messagebox.showinfo("Éxito", f"Archivo generado:\n{res}")
+        except Exception as exc:
+            messagebox.showerror("Error", human_error(exc))
+            self._set_status("Error al editar PDF")
+
+    def _ask_pdf_edit_options(self) -> dict[str, str | int | float] | None:
+        """Solicita opciones de edición/firma de PDF con diálogos simples."""
+        operation = simpledialog.askstring(
+            "Editar PDF",
+            "Elige operación: replace (reemplazar texto), add (agregar texto), sign (firmar).",
+            parent=self,
+        )
+        if not operation:
+            return None
+
+        op = operation.strip().lower()
+        if op == "replace":
+            search_text = simpledialog.askstring("Reemplazar", "Texto a buscar:", parent=self)
+            if search_text is None:
+                return None
+            replace_text = simpledialog.askstring("Reemplazar", "Texto nuevo:", parent=self)
+            if replace_text is None:
+                return None
+            return {"mode": "replace", "search_text": search_text, "replace_text": replace_text}
+
+        if op == "add":
+            text = simpledialog.askstring("Agregar texto", "Texto a insertar:", parent=self)
+            if text is None:
+                return None
+            page_number = simpledialog.askinteger("Agregar texto", "Página (1..N):", initialvalue=1, parent=self)
+            if page_number is None:
+                return None
+            x = simpledialog.askfloat("Agregar texto", "Posición X (pt):", initialvalue=72.0, parent=self)
+            y = simpledialog.askfloat("Agregar texto", "Posición Y (pt):", initialvalue=72.0, parent=self)
+            if x is None or y is None:
+                return None
+            return {"mode": "add", "text": text, "page_number": page_number, "x": x, "y": y}
+
+        if op == "sign":
+            signer_name = simpledialog.askstring("Firmar PDF", "Nombre del firmante:", parent=self)
+            if signer_name is None:
+                return None
+            page_number = simpledialog.askinteger(
+                "Firmar PDF",
+                "Página para firma (vacío = última):",
+                parent=self,
+            )
+            use_image = messagebox.askyesno("Firma", "¿Deseas agregar una imagen de firma?")
+            signature_image_path = ""
+            if use_image:
+                signature_image_path = filedialog.askopenfilename(
+                    title="Selecciona imagen de firma",
+                    filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.bmp")],
+                )
+            return {
+                "mode": "sign",
+                "signer_name": signer_name,
+                "page_number": page_number or 0,
+                "signature_image_path": signature_image_path,
+            }
+
+        messagebox.showwarning("Editar PDF", "Operación inválida. Usa: replace, add o sign.")
+        return None
 
     def _ask_split_options(self, input_pdf: Path) -> dict[str, int | str | None] | None:
         """Muestra el diálogo para configurar la división de un PDF con campos dinámicos."""

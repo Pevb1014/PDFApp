@@ -4,12 +4,15 @@ import importlib.util
 import io
 import re
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+import fitz
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches
+from src.adapters.pdf_edit_adapter import PDFEditAdapter
 from src.adapters.pdf_adapter import PDFAdapter
 
 
@@ -24,12 +27,17 @@ class PDFService:
     Contiene la lógica para unir, dividir, extraer texto y convertir PDFs a Word.
     """
 
-    def __init__(self, pdf_adapter: PDFAdapter | None = None) -> None:
+    def __init__(
+        self,
+        pdf_adapter: PDFAdapter | None = None,
+        pdf_edit_adapter: PDFEditAdapter | None = None,
+    ) -> None:
         """
         Inicializa el servicio con un adaptador de PDF.
         :param pdf_adapter: Adaptador que implementa las operaciones de bajo nivel (pypdf).
         """
         self._pdf_adapter = pdf_adapter or PDFAdapter()
+        self._pdf_edit_adapter = pdf_edit_adapter or PDFEditAdapter()
 
     def _image_extraction_available(self) -> bool:
         """Verifica si la librería Pillow está disponible para extracción de imágenes."""
@@ -595,3 +603,110 @@ class PDFService:
         # docx2pdf puede ser ruidoso, pero es efectivo en Windows con Word
         convert(str(input_path), str(output_pdf))
         return output_pdf
+
+    def replace_text_in_pdf(
+        self,
+        input_path: Path,
+        output_path: Path,
+        search_text: str,
+        replace_text: str,
+    ) -> Path:
+        """
+        Reemplaza texto existente en un PDF y genera un nuevo archivo.
+        Nota: este método aplica redacción visual y reescritura de texto.
+        """
+        if not search_text.strip():
+            raise ValueError("Debes indicar el texto a buscar.")
+
+        document = self._pdf_edit_adapter.open_document(input_path)
+        replacements = 0
+        try:
+            for page in document:
+                matches = page.search_for(search_text)
+                for rect in matches:
+                    page.add_redact_annot(rect, fill=(1, 1, 1))
+                if matches:
+                    page.apply_redactions()
+                    for rect in matches:
+                        page.insert_text((rect.x0, rect.y1 - 2), replace_text, fontsize=11, color=(0, 0, 0))
+                    replacements += len(matches)
+
+            if replacements == 0:
+                raise ValueError("No se encontró el texto a reemplazar en el documento.")
+
+            self._pdf_edit_adapter.save_document(document, output_path)
+            return output_path
+        finally:
+            document.close()
+
+    def add_text_to_pdf(
+        self,
+        input_path: Path,
+        output_path: Path,
+        text: str,
+        page_number: int = 1,
+        x: float = 72,
+        y: float = 72,
+    ) -> Path:
+        """Agrega contenido de texto en una posición específica de una página."""
+        if not text.strip():
+            raise ValueError("El texto a agregar no puede estar vacío.")
+
+        document = self._pdf_edit_adapter.open_document(input_path)
+        try:
+            if page_number < 1 or page_number > len(document):
+                raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
+
+            page = document[page_number - 1]
+            page.insert_text((x, y), text, fontsize=12, color=(0, 0, 0))
+            self._pdf_edit_adapter.save_document(document, output_path)
+            return output_path
+        finally:
+            document.close()
+
+    def sign_pdf(
+        self,
+        input_path: Path,
+        output_path: Path,
+        signer_name: str,
+        page_number: int | None = None,
+        signature_image_path: Path | None = None,
+    ) -> Path:
+        """Inserta una firma visible (texto y opcionalmente imagen) en el PDF."""
+        if not signer_name.strip():
+            raise ValueError("Debes indicar el nombre del firmante.")
+
+        document = self._pdf_edit_adapter.open_document(input_path)
+        try:
+            target_page_number = page_number or len(document)
+            if target_page_number < 1 or target_page_number > len(document):
+                raise ValueError(
+                    f"Página inválida para firma: {target_page_number}. Rango permitido: 1-{len(document)}"
+                )
+
+            page = document[target_page_number - 1]
+            page_height = float(page.rect.height)
+            sign_text = (
+                f"Firmado por: {signer_name}\n"
+                f"Fecha (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            page.insert_textbox(
+                fitz.Rect(72, page_height - 90, 350, page_height - 20),
+                sign_text,
+                fontsize=10,
+                color=(0, 0, 0),
+            )
+
+            if signature_image_path is not None:
+                if not signature_image_path.exists():
+                    raise FileNotFoundError(f"No existe la imagen de firma: {signature_image_path}")
+                page.insert_image(
+                    fitz.Rect(360, page_height - 95, 520, page_height - 25),
+                    filename=str(signature_image_path),
+                    keep_proportion=True,
+                )
+
+            self._pdf_edit_adapter.save_document(document, output_path)
+            return output_path
+        finally:
+            document.close()

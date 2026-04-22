@@ -64,6 +64,7 @@ pyinstaller --noconfirm --clean --onefile --windowed --name PDFProcessor main.py
 - **Interfaz Moderna**: UI renovada con estilos personalizados, iconos y disposición mejorada.
 - **Procesamiento por Lotes**: Extraer contenido o convertir a Word múltiples PDFs simultáneamente.
 - **Conversión Inversa**: Convertir uno o varios archivos Word (.docx) a PDF.
+- **Edición de PDF**: Reemplazar texto existente, agregar contenido y añadir firma visible (texto e imagen opcional).
 - Cargar uno o múltiples PDFs.
 - Listado de PDFs cargados.
 - Reordenar manualmente la lista (Subir/Bajar) para decidir un orden exacto de unión.
@@ -165,3 +166,15 @@ Después de convertir con `pdf2docx`, la app aplica limpieza de layout:
 - Fuerza flujo vertical legible (separación visual antes/después de imágenes).
 - Evita superposición texto/imagen moviendo imágenes a párrafos dedicados cuando es necesario.
 - Ajusta automáticamente imágenes grandes al ancho máximo aproximado de página (~6 in), manteniendo proporción.
+
+
+## Edición y firma de PDF
+La interfaz incluye la acción **"✍️ Editar / Firmar PDF"** para el archivo PDF seleccionado:
+
+1. `replace`: reemplaza un texto por otro en todo el documento.
+2. `add`: agrega texto en una página y coordenadas definidas.
+3. `sign`: añade firma visible con nombre del firmante, fecha UTC e imagen opcional.
+
+Notas:
+- La edición genera un PDF nuevo (no sobrescribe el original automáticamente).
+- Para firma con imagen se aceptan formatos comunes (`.png`, `.jpg`, `.jpeg`, `.bmp`).
