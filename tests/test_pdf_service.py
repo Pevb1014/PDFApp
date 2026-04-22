@@ -9,6 +9,7 @@ PdfWriter = pypdf.PdfWriter
 docx = pytest.importorskip("docx")
 Document = docx.Document
 fitz = pytest.importorskip("fitz")
+Image = pytest.importorskip("PIL.Image")
 
 from src.services.pdf_service import PDFService
 
@@ -27,6 +28,11 @@ def _make_text_pdf(path: Path, text: str) -> None:
     page.insert_text((72, 72), text)
     doc.save(str(path))
     doc.close()
+
+
+def _make_image(path: Path) -> None:
+    img = Image.new("RGB", (120, 40), color=(20, 20, 20))
+    img.save(path)
 
 
 def test_merge_and_split(tmp_path: Path) -> None:
@@ -262,3 +268,33 @@ def test_extract_text_from_page_returns_page_content(tmp_path: Path) -> None:
     page_text = service.extract_text_from_page(input_pdf, page_number=1)
 
     assert "Contenido pagina 1" in page_text
+
+
+def test_replace_text_at_position_updates_clicked_word(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "clicked_word.pdf"
+    output_pdf = tmp_path / "clicked_word_out.pdf"
+    _make_text_pdf(input_pdf, "Editar aqui")
+
+    service = PDFService()
+    service.replace_text_at_position(input_pdf, output_pdf, page_number=1, x=75, y=72, replacement_text="Nuevo")
+
+    doc = fitz.open(str(output_pdf))
+    text = doc[0].get_text()
+    doc.close()
+    assert "Nuevo" in text
+
+
+def test_insert_image_to_pdf_places_image_on_page(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "image_input.pdf"
+    output_pdf = tmp_path / "image_output.pdf"
+    image_path = tmp_path / "sig.png"
+    _make_pdf(input_pdf, pages=1)
+    _make_image(image_path)
+
+    service = PDFService()
+    service.insert_image_to_pdf(input_pdf, output_pdf, image_path, page_number=1, x=80, y=80)
+
+    doc = fitz.open(str(output_pdf))
+    images = doc[0].get_images(full=True)
+    doc.close()
+    assert len(images) >= 1

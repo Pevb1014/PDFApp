@@ -733,3 +733,129 @@ class PDFService:
             return document[page_number - 1].get_text().strip()
         finally:
             document.close()
+
+    def get_page_size(self, input_path: Path, page_number: int = 1) -> tuple[float, float]:
+        """Obtiene ancho/alto de una página PDF en puntos."""
+        document = self._pdf_edit_adapter.open_document(input_path)
+        try:
+            if page_number < 1 or page_number > len(document):
+                raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
+            rect = document[page_number - 1].rect
+            return float(rect.width), float(rect.height)
+        finally:
+            document.close()
+
+    def insert_image_to_pdf(
+        self,
+        input_path: Path,
+        output_path: Path,
+        image_path: Path,
+        page_number: int,
+        x: float,
+        y: float,
+        width: float = 140,
+        height: float = 55,
+    ) -> Path:
+        """Inserta una imagen en una posición específica del PDF."""
+        if not image_path.exists():
+            raise FileNotFoundError(f"No existe la imagen: {image_path}")
+
+        document = self._pdf_edit_adapter.open_document(input_path)
+        try:
+            if page_number < 1 or page_number > len(document):
+                raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
+            page = document[page_number - 1]
+            page.insert_image(
+                fitz.Rect(x, y, x + width, y + height),
+                filename=str(image_path),
+                keep_proportion=True,
+            )
+            self._pdf_edit_adapter.save_document(document, output_path)
+            return output_path
+        finally:
+            document.close()
+
+    def replace_text_at_position(
+        self,
+        input_path: Path,
+        output_path: Path,
+        page_number: int,
+        x: float,
+        y: float,
+        replacement_text: str,
+    ) -> Path:
+        """Reemplaza la palabra ubicada en la posición indicada."""
+        if not replacement_text.strip():
+            raise ValueError("El texto de reemplazo no puede estar vacío.")
+
+        document = self._pdf_edit_adapter.open_document(input_path)
+        try:
+            if page_number < 1 or page_number > len(document):
+                raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
+            page = document[page_number - 1]
+
+            words = page.get_text("words")
+            target = None
+            for word in words:
+                x0, y0, x1, y1, *_ = word
+                if x0 <= x <= x1 and y0 <= y <= y1:
+                    target = (x0, y0, x1, y1)
+                    break
+
+            if target is None:
+                raise ValueError("No se encontró texto en la posición seleccionada.")
+
+            rect = fitz.Rect(*target)
+            page.add_redact_annot(rect, fill=(1, 1, 1))
+            page.apply_redactions()
+            page.insert_text((rect.x0, rect.y1 - 2), replacement_text, fontsize=11, color=(0, 0, 0))
+
+            self._pdf_edit_adapter.save_document(document, output_path)
+            return output_path
+        finally:
+            document.close()
+
+    def sign_pdf_at_position(
+        self,
+        input_path: Path,
+        output_path: Path,
+        signer_name: str,
+        page_number: int,
+        x: float,
+        y: float,
+        signature_image_path: Path | None = None,
+    ) -> Path:
+        """Inserta una firma visible en la posición indicada por el usuario."""
+        if not signer_name.strip():
+            raise ValueError("Debes indicar el nombre del firmante.")
+
+        document = self._pdf_edit_adapter.open_document(input_path)
+        try:
+            if page_number < 1 or page_number > len(document):
+                raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
+            page = document[page_number - 1]
+
+            sign_text = (
+                f"Firmado por: {signer_name}\n"
+                f"Fecha (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            page.insert_textbox(
+                fitz.Rect(x, y, x + 270, y + 55),
+                sign_text,
+                fontsize=10,
+                color=(0, 0, 0),
+            )
+
+            if signature_image_path is not None:
+                if not signature_image_path.exists():
+                    raise FileNotFoundError(f"No existe la imagen de firma: {signature_image_path}")
+                page.insert_image(
+                    fitz.Rect(x + 275, y, x + 430, y + 55),
+                    filename=str(signature_image_path),
+                    keep_proportion=True,
+                )
+
+            self._pdf_edit_adapter.save_document(document, output_path)
+            return output_path
+        finally:
+            document.close()

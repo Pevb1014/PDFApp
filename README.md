@@ -172,10 +172,13 @@ Después de convertir con `pdf2docx`, la app aplica limpieza de layout:
 La interfaz incluye la acción **"✍️ Editar / Firmar PDF"** para el archivo PDF seleccionado:
 
 1. `replace`: reemplaza un texto por otro en todo el documento.
-2. `add`: agrega texto en una página y coordenadas definidas.
-3. `sign`: añade firma visible con nombre del firmante, fecha UTC e imagen opcional.
+2. `add`: agrega texto directamente donde haces click en la vista del PDF.
+3. `edit_click`: reemplaza la palabra ubicada en la posición clicada.
+4. `image`: inserta una imagen en la posición clicada.
+5. `sign`: añade firma visible (texto + imagen opcional) justo en la posición clicada.
 
 Notas:
 - La edición genera un PDF nuevo (no sobrescribe el original automáticamente).
 - Para firma con imagen se aceptan formatos comunes (`.png`, `.jpg`, `.jpeg`, `.bmp`).
 - El editor abre una ventana gráfica con **vista previa de página** y texto detectado para facilitar la edición.
+- El flujo es interactivo tipo editor visual: seleccionas modo y luego haces click en el lugar del PDF donde quieres aplicar la acción.
