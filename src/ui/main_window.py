@@ -44,6 +44,8 @@ class MainWindow(ttk.Frame):
         self.loaded_files: list[Path] = []
         self.status_var = tk.StringVar(value="Listo para procesar PDFs")
         self.pdf_info_var = tk.StringVar(value="Selecciona un PDF de la lista")
+        self.preview_current_pdf: Path | None = None
+        self.preview_images: list[tk.PhotoImage] = []
 
         self._configure_styles()
         self._build_ui()
@@ -156,19 +158,46 @@ class MainWindow(ttk.Frame):
         info_frame.pack(fill=tk.X)
         ttk.Label(info_frame, textvariable=self.pdf_info_var, font=("Segoe UI", 9, "italic")).pack(side=tk.LEFT)
 
-        # Salida de texto
-        output_frame = ttk.LabelFrame(content_area, text="📜 Resultado / Texto Extraído", padding=10)
-        output_frame.pack(fill=tk.BOTH, expand=True)
-        
+        # Área de trabajo por pestañas (resultado + visualizador integrado)
+        self.workspace_notebook = ttk.Notebook(content_area)
+        self.workspace_notebook.pack(fill=tk.BOTH, expand=True)
+
+        output_tab = ttk.Frame(self.workspace_notebook, padding=10)
+        self.workspace_notebook.add(output_tab, text="📜 Resultado / Texto")
         self.output_text = scrolledtext.ScrolledText(
-            output_frame, 
-            height=10, 
-            font=("Consolas", 10), 
-            borderwidth=1, 
+            output_tab,
+            height=10,
+            font=("Consolas", 10),
+            borderwidth=1,
             relief=tk.FLAT,
-            bg="#ffffff"
+            bg="#ffffff",
         )
         self.output_text.pack(fill=tk.BOTH, expand=True)
+
+        preview_tab = ttk.Frame(self.workspace_notebook, padding=10)
+        self.workspace_notebook.add(preview_tab, text="👁️ Visualizador PDF")
+        preview_tab.rowconfigure(1, weight=1)
+        preview_tab.columnconfigure(0, weight=1)
+
+        preview_toolbar = ttk.Frame(preview_tab)
+        preview_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        self.preview_title_var = tk.StringVar(value="Selecciona un PDF y pulsa Visualizar.")
+        ttk.Label(preview_toolbar, textvariable=self.preview_title_var).pack(side=tk.LEFT)
+        create_button(preview_toolbar, "✍️ Editar este PDF", self._edit_previewed_pdf, style="Accent.TButton").pack(side=tk.RIGHT)
+
+        viewer_container = ttk.Frame(preview_tab)
+        viewer_container.grid(row=1, column=0, sticky="nsew")
+        viewer_container.rowconfigure(0, weight=1)
+        viewer_container.columnconfigure(0, weight=1)
+
+        self.preview_canvas = tk.Canvas(viewer_container, bg="#f4f4f4", highlightthickness=0)
+        self.preview_canvas.grid(row=0, column=0, sticky="nsew")
+        self.preview_scrollbar = ttk.Scrollbar(viewer_container, orient=tk.VERTICAL, command=self.preview_canvas.yview)
+        self.preview_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.preview_canvas.configure(yscrollcommand=self.preview_scrollbar.set)
+        self.preview_canvas.bind("<MouseWheel>", self._on_preview_mousewheel)
+        self.preview_canvas.bind("<Button-4>", self._on_preview_mousewheel)
+        self.preview_canvas.bind("<Button-5>", self._on_preview_mousewheel)
 
         # 3. Barra de estado
         status_bar = ttk.Frame(self, relief=tk.SUNKEN, padding=(10, 2))
@@ -611,18 +640,75 @@ class MainWindow(ttk.Frame):
         return result if result else None
 
     def _preview_pdf(self) -> None:
-        """Abre el PDF seleccionado en el visor del sistema."""
+        """Visualiza el PDF seleccionado dentro de una pestaña integrada de la app."""
         selected_idx = self._selected_pdf_index()
         if selected_idx is None:
             messagebox.showwarning("Visualizar", "Selecciona un PDF de la lista.")
             return
 
         input_pdf = self.loaded_files[selected_idx]
+        if input_pdf.suffix.lower() != ".pdf":
+            messagebox.showwarning("Visualizar", "La visualización integrada solo está disponible para archivos PDF.")
+            return
         try:
-            self.viewer_service.open_pdf(input_pdf)
-            self._set_status(f"Visualizando {input_pdf.name}")
+            self._render_pdf_in_app_viewer(input_pdf)
+            self.workspace_notebook.select(1)
+            self._set_status(f"Visualizando {input_pdf.name} en pestaña integrada")
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
+            self._set_status("Error al visualizar PDF")
+
+    def _render_pdf_in_app_viewer(self, input_pdf: Path) -> None:
+        self.preview_canvas.delete("all")
+        self.preview_images = []
+        self.preview_current_pdf = input_pdf
+        self.preview_title_var.set(f"Vista integrada: {input_pdf.name}")
+
+        total_pages = self.pdf_service.get_total_pages(input_pdf)
+        y_offset = 12
+        page_gap = 16
+        max_width = 0
+        for page_number in range(1, total_pages + 1):
+            image_bytes = self.pdf_service.render_pdf_page_preview(input_pdf, page_number=page_number, zoom=1.1)
+            encoded = base64.b64encode(image_bytes).decode("ascii")
+            photo = tk.PhotoImage(data=encoded)
+            self.preview_images.append(photo)
+
+            self.preview_canvas.create_text(
+                12,
+                y_offset,
+                anchor=tk.NW,
+                text=f"Página {page_number}/{total_pages}",
+                font=("Segoe UI", 9, "bold"),
+                fill="#202124",
+            )
+            y_offset += 20
+            self.preview_canvas.create_image(12, y_offset, anchor=tk.NW, image=photo)
+            y_offset += photo.height() + page_gap
+            max_width = max(max_width, photo.width())
+
+        self.preview_canvas.configure(scrollregion=(0, 0, max_width + 32, y_offset))
+        self.preview_canvas.yview_moveto(0)
+
+    def _on_preview_mousewheel(self, event) -> None:
+        if getattr(event, "num", None) == 4:
+            self.preview_canvas.yview_scroll(-3, "units")
+        elif getattr(event, "num", None) == 5:
+            self.preview_canvas.yview_scroll(3, "units")
+        else:
+            delta_units = -1 if event.delta > 0 else 1
+            self.preview_canvas.yview_scroll(delta_units * 3, "units")
+
+    def _edit_previewed_pdf(self) -> None:
+        if self.preview_current_pdf is None:
+            messagebox.showwarning("Editar PDF", "Primero visualiza un PDF en la pestaña integrada.")
+            return
+        try:
+            subprocess.Popen([sys.executable, "-m", "src.ui.pdf_editor_app", str(self.preview_current_pdf)])
+            self._set_status(f"Editor PDF abierto para {self.preview_current_pdf.name}")
+        except Exception as exc:
+            messagebox.showerror("Error", human_error(exc))
+            self._set_status("Error al abrir editor PDF")
 
     def _edit_pdf(self) -> None:
         """Abre el editor de PDF avanzado (PyQt6) para edición por superposiciones."""
