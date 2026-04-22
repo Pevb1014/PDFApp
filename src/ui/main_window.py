@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import base64
+import io
 import shutil
 import subprocess
 import sys
 import tempfile
 import tkinter as tk
+import tkinter.font as tkfont
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
@@ -47,7 +49,7 @@ class MainWindow(ttk.Frame):
         self.pdf_info_var = tk.StringVar(value="Selecciona un PDF de la lista")
         self.preview_current_pdf: Path | None = None
         self.preview_images: list[tk.PhotoImage] = []
-        self.preview_temp_dir: Path | None = None
+        self.preview_tab_display_name = "👁️ Vista"
 
         self._configure_styles()
         self._build_ui()
@@ -187,14 +189,12 @@ class MainWindow(ttk.Frame):
         self.preview_tab_index = 1
         preview_tab.rowconfigure(1, weight=1)
         preview_tab.columnconfigure(0, weight=1)
+        self.workspace_notebook.bind("<ButtonRelease-1>", self._on_notebook_click, add="+")
 
         preview_toolbar = ttk.Frame(preview_tab)
         preview_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         self.preview_title_var = tk.StringVar(value="Selecciona un archivo de la lista para previsualizar.")
-        title_row = ttk.Frame(preview_toolbar)
-        title_row.pack(side=tk.LEFT)
-        ttk.Label(title_row, textvariable=self.preview_title_var).pack(side=tk.LEFT)
-        create_button(title_row, "✕", self._clear_preview).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(preview_toolbar, textvariable=self.preview_title_var).pack(side=tk.LEFT)
         self.edit_preview_btn = create_button(preview_toolbar, "✍️ Editar este PDF", self._edit_previewed_pdf, style="Accent.TButton")
         self.edit_preview_btn.pack(side=tk.RIGHT)
 
@@ -722,22 +722,10 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.yview_moveto(0)
 
     def _render_word_in_app_viewer(self, input_docx: Path) -> None:
-        self._cleanup_preview_temp_files()
-        try:
-            temp_dir = Path(tempfile.mkdtemp(prefix="word_preview_"))
-            temp_pdf = temp_dir / f"{input_docx.stem}_preview.pdf"
-            converted_pdf = self.pdf_service.convert_docx_to_pdf(input_docx, temp_pdf)
-            self.preview_temp_dir = temp_dir
-            self._render_pdf_in_app_viewer(converted_pdf, display_name=input_docx.name, allow_edit=False)
-            return
-        except Exception:
-            # Fallback textual si no es posible convertir a PDF en este entorno
-            pass
-
         self._set_preview_tab_title(input_docx.name)
         self.preview_images = []
         self.preview_current_pdf = None
-        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word - texto)")
+        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word)")
         self._show_word_preview_mode()
         self.preview_word_text.configure(state=tk.NORMAL)
         self.preview_word_text.delete("1.0", tk.END)
@@ -747,9 +735,56 @@ class MainWindow(ttk.Frame):
         self.preview_word_text.insert(tk.END, "-" * max(40, len(input_docx.name)) + "\n\n")
 
         for paragraph in doc.paragraphs:
-            text = paragraph.text.strip()
-            if text:
-                self.preview_word_text.insert(tk.END, f"{text}\n")
+            style_name = (paragraph.style.name or "").lower() if paragraph.style else ""
+            style_tag = ()
+            prefix = ""
+            if style_name.startswith("heading 1"):
+                style_tag = ("heading1",)
+            elif style_name.startswith("heading 2"):
+                style_tag = ("heading2",)
+            elif style_name.startswith("heading 3"):
+                style_tag = ("heading3",)
+            elif "list" in style_name or "bullet" in style_name:
+                prefix = "• "
+
+            if prefix:
+                self.preview_word_text.insert(tk.END, prefix)
+
+            if not paragraph.runs:
+                plain_text = paragraph.text.strip()
+                if plain_text:
+                    self.preview_word_text.insert(tk.END, f"{plain_text}\n", style_tag)
+                continue
+
+            for run in paragraph.runs:
+                run_tags: tuple[str, ...] = style_tag
+                if run.bold:
+                    run_tags += ("bold",)
+                if run.italic:
+                    run_tags += ("italic",)
+                self.preview_word_text.insert(tk.END, run.text, run_tags)
+            self.preview_word_text.insert(tk.END, "\n")
+
+        for table in doc.tables:
+            self.preview_word_text.insert(tk.END, "\n[Tabla]\n", ("table",))
+            for row in table.rows:
+                row_values = [cell.text.strip().replace("\n", " ") for cell in row.cells]
+                line = " | ".join(value if value else "-" for value in row_values)
+                self.preview_word_text.insert(tk.END, f"{line}\n", ("table",))
+
+        # Inserta imágenes embebidas del documento si existen (sin conversión a PDF)
+        self.preview_word_text.insert(tk.END, "\n")
+        for rel in doc.part.rels.values():
+            if "image" not in rel.reltype:
+                continue
+            image_blob = rel.target_part.blob
+            photo = self._photo_from_image_blob(image_blob)
+            if photo is None:
+                continue
+            self.preview_images.append(photo)
+            self.preview_word_text.insert(tk.END, "[Imagen]\n", ("table",))
+            self.preview_word_text.image_create(tk.END, image=photo)
+            self.preview_word_text.insert(tk.END, "\n\n")
 
         self.preview_word_text.configure(state=tk.DISABLED)
         self.preview_word_text.yview_moveto(0)
@@ -775,7 +810,6 @@ class MainWindow(ttk.Frame):
             self._set_status("Error al abrir editor PDF")
 
     def _clear_preview(self) -> None:
-        self._cleanup_preview_temp_files()
         self.preview_canvas.delete("all")
         self.preview_images = []
         self.preview_current_pdf = None
@@ -790,6 +824,7 @@ class MainWindow(ttk.Frame):
 
     def _set_preview_tab_title(self, label: str) -> None:
         trimmed = label if len(label) <= 32 else f"{label[:29]}..."
+        self.preview_tab_display_name = trimmed
         self.workspace_notebook.tab(self.preview_tab_index, text=f"{trimmed}  ✕")
 
     def _show_word_preview_mode(self) -> None:
@@ -809,10 +844,38 @@ class MainWindow(ttk.Frame):
         self.preview_scrollbar.configure(command=self.preview_canvas.yview)
         self.preview_canvas.configure(yscrollcommand=self.preview_scrollbar.set)
 
-    def _cleanup_preview_temp_files(self) -> None:
-        if self.preview_temp_dir is not None:
-            shutil.rmtree(self.preview_temp_dir, ignore_errors=True)
-            self.preview_temp_dir = None
+    def _photo_from_image_blob(self, image_blob: bytes) -> tk.PhotoImage | None:
+        try:
+            from PIL import Image, ImageTk  # type: ignore
+
+            image = Image.open(io.BytesIO(image_blob))
+            max_width = 900
+            if image.width > max_width:
+                ratio = max_width / image.width
+                image = image.resize((max_width, int(image.height * ratio)))
+            return ImageTk.PhotoImage(image)
+        except Exception:
+            try:
+                encoded = base64.b64encode(image_blob).decode("ascii")
+                return tk.PhotoImage(data=encoded)
+            except Exception:
+                return None
+
+    def _on_notebook_click(self, event) -> None:
+        try:
+            tab_id = self.workspace_notebook.index(f"@{event.x},{event.y}")
+        except tk.TclError:
+            return
+        if tab_id != self.preview_tab_index:
+            return
+        try:
+            x1, _y1, width, _height = self.workspace_notebook.bbox(tab_id)
+        except tk.TclError:
+            return
+        close_text = "✕"
+        close_width = tkfont.nametofont("TkDefaultFont").measure(close_text) + 8
+        if event.x >= (x1 + width - close_width):
+            self._clear_preview()
 
     def _edit_pdf(self) -> None:
         """Abre el editor de PDF avanzado (PyQt6) para edición por superposiciones."""
