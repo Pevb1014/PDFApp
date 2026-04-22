@@ -50,6 +50,7 @@ class MainWindow(ttk.Frame):
         self.preview_current_pdf: Path | None = None
         self.preview_images: list[tk.PhotoImage] = []
         self.preview_tab_display_name = "👁️ Vista"
+        self.preview_html_widget = None
 
         self._configure_styles()
         self._build_ui()
@@ -722,6 +723,10 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.yview_moveto(0)
 
     def _render_word_in_app_viewer(self, input_docx: Path) -> None:
+        html_rendered = self._try_render_word_as_html(input_docx)
+        if html_rendered:
+            return
+
         self._set_preview_tab_title(input_docx.name)
         self.preview_images = []
         self.preview_current_pdf = None
@@ -789,6 +794,38 @@ class MainWindow(ttk.Frame):
         self.preview_word_text.configure(state=tk.DISABLED)
         self.preview_word_text.yview_moveto(0)
 
+    def _try_render_word_as_html(self, input_docx: Path) -> bool:
+        """
+        Intenta convertir DOCX a HTML y renderizarlo en la pestaña de vista previa.
+        Requiere librerías opcionales: mammoth + tkhtmlview.
+        """
+        try:
+            import mammoth  # type: ignore
+            from tkhtmlview import HTMLScrolledText  # type: ignore
+        except Exception:
+            return False
+
+        try:
+            with input_docx.open("rb") as docx_file:
+                result = mammoth.convert_to_html(docx_file)
+            html = result.value
+        except Exception:
+            return False
+
+        if self.preview_html_widget is None:
+            self.preview_html_widget = HTMLScrolledText(
+                self.preview_canvas.master,
+                html="",
+                background="#ffffff",
+            )
+        self.preview_html_widget.set_html(html)
+        self._set_preview_tab_title(input_docx.name)
+        self.preview_images = []
+        self.preview_current_pdf = None
+        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word/HTML)")
+        self._show_word_html_mode()
+        return True
+
     def _on_preview_mousewheel(self, event) -> None:
         if getattr(event, "num", None) == 4:
             self.preview_canvas.yview_scroll(-3, "units")
@@ -813,6 +850,8 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.delete("all")
         self.preview_images = []
         self.preview_current_pdf = None
+        if self.preview_html_widget is not None:
+            self.preview_html_widget.grid_remove()
         self.preview_word_text.configure(state=tk.NORMAL)
         self.preview_word_text.delete("1.0", tk.END)
         self.preview_word_text.configure(state=tk.DISABLED)
@@ -828,15 +867,29 @@ class MainWindow(ttk.Frame):
         self.workspace_notebook.tab(self.preview_tab_index, text=f"{trimmed}  ✕")
 
     def _show_word_preview_mode(self) -> None:
+        if self.preview_html_widget is not None:
+            self.preview_html_widget.grid_remove()
         self.preview_canvas.grid_remove()
         self.preview_word_text.grid(row=0, column=0, sticky="nsew")
         self.edit_preview_btn.pack_forget()
+        self.preview_scrollbar.grid()
         self.preview_scrollbar.configure(command=self.preview_word_text.yview)
         self.preview_word_text.configure(yscrollcommand=self.preview_scrollbar.set)
 
+    def _show_word_html_mode(self) -> None:
+        self.preview_canvas.grid_remove()
+        self.preview_word_text.grid_remove()
+        if self.preview_html_widget is not None:
+            self.preview_html_widget.grid(row=0, column=0, sticky="nsew")
+        self.edit_preview_btn.pack_forget()
+        self.preview_scrollbar.grid_remove()
+
     def _show_pdf_preview_mode(self, *, allow_edit: bool) -> None:
+        if self.preview_html_widget is not None:
+            self.preview_html_widget.grid_remove()
         self.preview_word_text.grid_remove()
         self.preview_canvas.grid(row=0, column=0, sticky="nsew")
+        self.preview_scrollbar.grid()
         if allow_edit and not self.edit_preview_btn.winfo_ismapped():
             self.edit_preview_btn.pack(side=tk.RIGHT)
         if not allow_edit and self.edit_preview_btn.winfo_ismapped():
