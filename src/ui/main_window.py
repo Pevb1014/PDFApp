@@ -48,6 +48,7 @@ class MainWindow(ttk.Frame):
         self.preview_current_pdf: Path | None = None
         self.preview_images: list[tk.PhotoImage] = []
         self.preview_tab_display_name = "👁️ Vista"
+        self.preview_temp_dir: Path | None = None
 
         self._configure_styles()
         self._build_ui()
@@ -720,6 +721,9 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.yview_moveto(0)
 
     def _render_word_in_app_viewer(self, input_docx: Path) -> None:
+        if self._try_render_word_with_aspose(input_docx):
+            return
+
         self._set_preview_tab_title(input_docx.name)
         self.preview_images = []
         self.preview_current_pdf = None
@@ -787,6 +791,65 @@ class MainWindow(ttk.Frame):
         self.preview_word_text.configure(state=tk.DISABLED)
         self.preview_word_text.yview_moveto(0)
 
+    def _try_render_word_with_aspose(self, input_docx: Path) -> bool:
+        """
+        Renderiza DOCX con Aspose.Words a imágenes de página para vista previa visual.
+        Devuelve False si Aspose no está disponible o falla el render.
+        """
+        try:
+            import aspose.words as aw  # type: ignore
+        except Exception:
+            return False
+
+        self._cleanup_preview_temp_files()
+        try:
+            temp_dir = Path(tempfile.mkdtemp(prefix="word_preview_aspose_"))
+            doc = aw.Document(str(input_docx))
+            image_paths: list[Path] = []
+            for page_index in range(doc.page_count):
+                out_image = temp_dir / f"page_{page_index + 1}.png"
+                save_options = aw.saving.ImageSaveOptions(aw.SaveFormat.PNG)
+                save_options.page_set = aw.saving.PageSet(page_index)
+                doc.save(str(out_image), save_options)
+                image_paths.append(out_image)
+            self.preview_temp_dir = temp_dir
+        except Exception:
+            self._cleanup_preview_temp_files()
+            return False
+
+        self._set_preview_tab_title(input_docx.name)
+        self.preview_current_pdf = None
+        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word / Aspose)")
+        self._show_pdf_preview_mode(allow_edit=False)
+        self.preview_canvas.delete("all")
+        self.preview_images = []
+
+        y_offset = 12
+        page_gap = 16
+        max_width = 0
+        total = len(image_paths)
+        for idx, image_path in enumerate(image_paths, start=1):
+            image_bytes = image_path.read_bytes()
+            encoded = base64.b64encode(image_bytes).decode("ascii")
+            photo = tk.PhotoImage(data=encoded)
+            self.preview_images.append(photo)
+            self.preview_canvas.create_text(
+                12,
+                y_offset,
+                anchor=tk.NW,
+                text=f"Página {idx}/{total}",
+                font=("Segoe UI", 9, "bold"),
+                fill="#202124",
+            )
+            y_offset += 20
+            self.preview_canvas.create_image(12, y_offset, anchor=tk.NW, image=photo)
+            y_offset += photo.height() + page_gap
+            max_width = max(max_width, photo.width())
+
+        self.preview_canvas.configure(scrollregion=(0, 0, max_width + 32, y_offset))
+        self.preview_canvas.yview_moveto(0)
+        return True
+
     def _on_preview_mousewheel(self, event) -> None:
         if getattr(event, "num", None) == 4:
             self.preview_canvas.yview_scroll(-3, "units")
@@ -808,6 +871,7 @@ class MainWindow(ttk.Frame):
             self._set_status("Error al abrir editor PDF")
 
     def _clear_preview(self) -> None:
+        self._cleanup_preview_temp_files()
         self.preview_canvas.delete("all")
         self.preview_images = []
         self.preview_current_pdf = None
@@ -866,6 +930,11 @@ class MainWindow(ttk.Frame):
         close_width = 22 if close_text else 22
         if event.x >= (x1 + width - close_width):
             self._clear_preview()
+
+    def _cleanup_preview_temp_files(self) -> None:
+        if self.preview_temp_dir is not None:
+            shutil.rmtree(self.preview_temp_dir, ignore_errors=True)
+            self.preview_temp_dir = None
 
     def _edit_pdf(self) -> None:
         """Abre el editor de PDF avanzado (PyQt6) para edición por superposiciones."""
