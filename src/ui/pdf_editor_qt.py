@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
     QColorDialog,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFontComboBox,
     QGraphicsPixmapItem,
@@ -16,6 +18,7 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -121,6 +124,11 @@ class OverlayTextItem(QGraphicsTextItem):
         self.overlay.rect = (x1, y1, x1 + new_w, y1 + new_h)
         self.on_resize(self.overlay.uid, self.overlay.rect)
 
+    def apply_style(self, style: OverlayStyle) -> None:
+        self.overlay.style = style
+        self.setDefaultTextColor(QColor.fromRgbF(*style.color_rgb))
+        self.setFont(QFont(style.font_family, int(style.font_size)))
+
 
 class OverlayImageItem(QGraphicsPixmapItem):
     def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_replace, on_scale, on_resize) -> None:
@@ -153,8 +161,14 @@ class OverlayImageItem(QGraphicsPixmapItem):
         x1, y1, x2, y2 = self.overlay.rect
         new_w = max(20.0, (x2 - x1) * factor)
         new_h = max(20.0, (y2 - y1) * factor)
-        self.overlay.rect = (x1, y1, x1 + new_w, y1 + new_h)
-        self.setPixmap(self.base_pixmap.scaled(int(new_w * self.zoom), int(new_h * self.zoom)))
+        self.set_size(new_w, new_h)
+
+    def set_size(self, width: float, height: float) -> None:
+        x1, y1, _, _ = self.overlay.rect
+        width = max(20.0, width)
+        height = max(20.0, height)
+        self.overlay.rect = (x1, y1, x1 + width, y1 + height)
+        self.setPixmap(self.base_pixmap.scaled(int(width * self.zoom), int(height * self.zoom)))
         self.on_move(self.overlay.uid, self.overlay.rect)
 
     def mousePressEvent(self, event):  # type: ignore[override]
@@ -188,6 +202,7 @@ class PDFEditorWindow(QMainWindow):
         self.zoom = 1.2
         self.mode = "text_add"
         self.current_color = QColor("black")
+        self._syncing_toolbar = False
         self.mode_map = {
             "Agregar texto nuevo": "text_add",
             "Insertar imagen": "image_add",
@@ -203,6 +218,7 @@ class PDFEditorWindow(QMainWindow):
         self.view.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.view.mousePressEvent = self._on_view_click  # type: ignore[assignment]
         self.view.wheelEvent = self._on_view_wheel  # type: ignore[assignment]
+        self.scene.selectionChanged.connect(self._on_selection_changed)
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -222,11 +238,13 @@ class PDFEditorWindow(QMainWindow):
         bar.addWidget(mode_box)
 
         self.font_box = QFontComboBox()
+        self.font_box.currentFontChanged.connect(self._on_toolbar_font_changed)
         bar.addWidget(self.font_box)
 
         self.font_size = QSpinBox()
         self.font_size.setRange(8, 72)
         self.font_size.setValue(12)
+        self.font_size.valueChanged.connect(self._on_toolbar_font_size_changed)
         bar.addWidget(self.font_size)
 
         color_btn = QPushButton("Color")
@@ -264,9 +282,22 @@ class PDFEditorWindow(QMainWindow):
         self.mode = mode
 
     def _pick_color(self) -> None:
-        chosen = QColorDialog.getColor(self.current_color, self, "Color texto")
-        if chosen.isValid():
-            self.current_color = chosen
+        selected = self._selected_text_item()
+        if selected is None:
+            chosen = QColorDialog.getColor(self.current_color, self, "Color texto")
+            if chosen.isValid():
+                self.current_color = chosen
+            return
+
+        original = QColor.fromRgbF(*selected.overlay.style.color_rgb)
+        dlg = QColorDialog(original, self)
+        dlg.setWindowTitle("Color texto")
+        dlg.currentColorChanged.connect(lambda color: self._apply_selected_text_style(color=color))
+        if dlg.exec():
+            self.current_color = dlg.currentColor()
+            self._apply_selected_text_style(color=self.current_color)
+        else:
+            self._apply_selected_text_style(color=original)
 
     def _change_zoom(self, delta: float) -> None:
         self.zoom = max(0.4, min(3.0, self.zoom + delta))
@@ -419,6 +450,62 @@ class PDFEditorWindow(QMainWindow):
                 return overlay
         return None
 
+    def _find_image_item(self, overlay_uid: str) -> OverlayImageItem | None:
+        for item in self.scene.items():
+            if isinstance(item, OverlayImageItem) and item.overlay.uid == overlay_uid:
+                return item
+        return None
+
+    def _selected_text_item(self) -> OverlayTextItem | None:
+        for item in self.scene.selectedItems():
+            if isinstance(item, OverlayTextItem):
+                return item
+        return None
+
+    def _on_selection_changed(self) -> None:
+        selected = self._selected_text_item()
+        if selected is None:
+            return
+        style = selected.overlay.style
+        self._syncing_toolbar = True
+        self.font_box.setCurrentFont(QFont(style.font_family))
+        self.font_size.setValue(int(style.font_size))
+        self.current_color = QColor.fromRgbF(*style.color_rgb)
+        self._syncing_toolbar = False
+
+    def _on_toolbar_font_changed(self, font) -> None:
+        if self._syncing_toolbar:
+            return
+        self._apply_selected_text_style(font_family=font.family())
+
+    def _on_toolbar_font_size_changed(self, size: int) -> None:
+        if self._syncing_toolbar:
+            return
+        self._apply_selected_text_style(font_size=float(size))
+
+    def _apply_selected_text_style(
+        self,
+        *,
+        font_family: str | None = None,
+        font_size: float | None = None,
+        color: QColor | None = None,
+    ) -> None:
+        selected = self._selected_text_item()
+        if selected is None:
+            return
+        style = selected.overlay.style
+        updated = OverlayStyle(
+            font_family=font_family or style.font_family,
+            font_size=font_size or style.font_size,
+            color_rgb=(
+                color.redF() if color else style.color_rgb[0],
+                color.greenF() if color else style.color_rgb[1],
+                color.blueF() if color else style.color_rgb[2],
+            ),
+        )
+        selected.apply_style(updated)
+        self.service.update_overlay_text(selected.overlay.uid, selected.toPlainText(), style=updated)
+
     def _export_pdf(self) -> None:
         out_path, _ = QFileDialog.getSaveFileName(self, "Exportar PDF", str(self.pdf_path.with_name("editado.pdf")), "PDF (*.pdf)")
         if not out_path:
@@ -482,52 +569,70 @@ class PDFEditorWindow(QMainWindow):
         overlay = self._find_overlay(overlay_uid)
         if overlay is None:
             return
-        percent, ok = QInputDialog.getDouble(
-            self,
-            "Re-escalar imagen",
-            "Escala (%)",
-            100.0,
-            10.0,
-            500.0,
-            1,
-        )
-        if not ok:
+        image_item = self._find_image_item(overlay_uid)
+        if image_item is None:
             return
-        factor = percent / 100.0
         x1, y1, x2, y2 = overlay.rect
-        width = max(20.0, (x2 - x1) * factor)
-        height = max(20.0, (y2 - y1) * factor)
-        self.service.update_overlay_rect(overlay_uid, (x1, y1, x1 + width, y1 + height))
-        self._render_page()
+        original_w = x2 - x1
+        original_h = y2 - y1
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Re-escalar imagen")
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel("Escala (%)"))
+        percent_spin = QDoubleSpinBox()
+        percent_spin.setRange(10.0, 500.0)
+        percent_spin.setDecimals(1)
+        percent_spin.setValue(100.0)
+        layout.addWidget(percent_spin)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        layout.addWidget(buttons)
+
+        def _preview_scale(value: float) -> None:
+            factor = value / 100.0
+            image_item.set_size(original_w * factor, original_h * factor)
+
+        percent_spin.valueChanged.connect(_preview_scale)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        if not dlg.exec():
+            image_item.set_size(original_w, original_h)
+            return
 
     def _resize_existing_overlay_image(self, overlay_uid: str) -> None:
         overlay = self._find_overlay(overlay_uid)
         if overlay is None:
             return
+        image_item = self._find_image_item(overlay_uid)
+        if image_item is None:
+            return
         x1, y1, x2, y2 = overlay.rect
         current_width = x2 - x1
         current_height = y2 - y1
-        width, ok_w = QInputDialog.getDouble(
-            self,
-            "Ajustar tamaño",
-            "Ancho (pt)",
-            current_width,
-            20.0,
-            2000.0,
-            1,
-        )
-        if not ok_w:
-            return
-        height, ok_h = QInputDialog.getDouble(
-            self,
-            "Ajustar tamaño",
-            "Alto (pt)",
-            current_height,
-            20.0,
-            2000.0,
-            1,
-        )
-        if not ok_h:
-            return
-        self.service.update_overlay_rect(overlay_uid, (x1, y1, x1 + width, y1 + height))
-        self._render_page()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Ajustar tamaño")
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel("Ancho (pt)"))
+        width_spin = QDoubleSpinBox()
+        width_spin.setRange(20.0, 2000.0)
+        width_spin.setDecimals(1)
+        width_spin.setValue(current_width)
+        layout.addWidget(width_spin)
+        layout.addWidget(QLabel("Alto (pt)"))
+        height_spin = QDoubleSpinBox()
+        height_spin.setRange(20.0, 2000.0)
+        height_spin.setDecimals(1)
+        height_spin.setValue(current_height)
+        layout.addWidget(height_spin)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        layout.addWidget(buttons)
+
+        def _preview_resize() -> None:
+            image_item.set_size(width_spin.value(), height_spin.value())
+
+        width_spin.valueChanged.connect(lambda _: _preview_resize())
+        height_spin.valueChanged.connect(lambda _: _preview_resize())
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        if not dlg.exec():
+            image_item.set_size(current_width, current_height)
