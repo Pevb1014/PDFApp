@@ -113,7 +113,7 @@ class OverlayTextItem(QGraphicsTextItem):
 
 
 class OverlayImageItem(QGraphicsPixmapItem):
-    def __init__(self, overlay: OverlayItem, zoom: float, on_move) -> None:
+    def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_replace) -> None:
         pix = QPixmap()
         pix.loadFromData(overlay.image_bytes or b"", "PNG")
         w = int((overlay.rect[2] - overlay.rect[0]) * zoom)
@@ -122,6 +122,7 @@ class OverlayImageItem(QGraphicsPixmapItem):
         self.overlay = overlay
         self.zoom = zoom
         self.on_move = on_move
+        self.on_replace = on_replace
         self.setPos(overlay.rect[0] * zoom, overlay.rect[1] * zoom)
         self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -135,14 +136,15 @@ class OverlayImageItem(QGraphicsPixmapItem):
         h = (self.overlay.rect[3] - self.overlay.rect[1])
         self.on_move(self.overlay.uid, (x, y, x + w, y + h))
 
-    def wheelEvent(self, event):  # type: ignore[override]
-        delta = event.delta() if hasattr(event, "delta") else event.angleDelta().y()
-        factor = 1.1 if delta > 0 else 0.9
+    def resize_by_factor(self, factor: float) -> None:
         new_w = max(20.0, (self.overlay.rect[2] - self.overlay.rect[0]) * factor)
         new_h = max(20.0, (self.overlay.rect[3] - self.overlay.rect[1]) * factor)
         x, y = self.overlay.rect[0], self.overlay.rect[1]
         self.on_move(self.overlay.uid, (x, y, x + new_w, y + new_h))
-        event.accept()
+
+    def mouseDoubleClickEvent(self, event):  # type: ignore[override]
+        super().mouseDoubleClickEvent(event)
+        self.on_replace(self.overlay.uid)
 
 
 class PDFEditorWindow(QMainWindow):
@@ -168,6 +170,7 @@ class PDFEditorWindow(QMainWindow):
         self.view.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
         self.view.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.view.mousePressEvent = self._on_view_click  # type: ignore[assignment]
+        self.view.wheelEvent = self._on_view_wheel  # type: ignore[assignment]
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -290,6 +293,16 @@ class PDFEditorWindow(QMainWindow):
         else:
             self._add_signature_overlay(x_pdf, y_pdf)
 
+    def _on_view_wheel(self, event):  # type: ignore[override]
+        hovered = self.view.itemAt(event.position().toPoint())
+        if isinstance(hovered, OverlayImageItem):
+            factor = 1.12 if event.angleDelta().y() > 0 else 0.9
+            hovered.resize_by_factor(factor)
+            self._render_page()
+            event.accept()
+            return
+        QGraphicsView.wheelEvent(self.view, event)
+
     def _add_text_overlay(self, x: float, y: float) -> None:
         text, ok = QInputDialog.getMultiLineText(self, "Agregar texto", "Texto:")
         if not ok or not text.strip():
@@ -353,7 +366,12 @@ class PDFEditorWindow(QMainWindow):
         self.scene.addItem(item)
 
     def _draw_overlay_image(self, overlay: OverlayItem) -> None:
-        item = OverlayImageItem(overlay=overlay, zoom=self.zoom, on_move=self.service.update_overlay_rect)
+        item = OverlayImageItem(
+            overlay=overlay,
+            zoom=self.zoom,
+            on_move=self.service.update_overlay_rect,
+            on_replace=self._replace_existing_overlay_image,
+        )
         self.scene.addItem(item)
 
     def _export_pdf(self) -> None:
@@ -386,11 +404,30 @@ class PDFEditorWindow(QMainWindow):
             self,
             "Instrucciones de uso",
             (
-                "1) Selecciona modo: Agregar texto, Insertar imagen o Firmar.\n"
-                "2) Haz click en el PDF para crear el elemento.\n"
-                "3) Arrastra texto/imagen/firma para ajustar posición.\n"
-                "4) Doble click en un texto para editarlo; si queda vacío se elimina.\n"
-                "5) Para imágenes, usa la rueda del mouse sobre la imagen para redimensionar.\n"
-                "6) Usa Exportar PDF para guardar los cambios en un nuevo archivo."
+                "1) Selecciona un modo: Agregar texto, Insertar imagen o Firmar.\n"
+                "2) Haz click sobre la página para insertar el elemento.\n"
+                "3) Arrastra cualquier texto/imagen/firma para posicionarlo exactamente.\n"
+                "4) Doble click en texto para editar contenido. Si queda vacío, se elimina.\n"
+                "5) Doble click en imagen para reemplazar por otra imagen.\n"
+                "6) Redimensiona imagen colocando el cursor sobre ella y usando la rueda del mouse.\n"
+                "7) Ajusta tipo de letra, tamaño y color desde la barra antes de insertar o al re-editar texto.\n"
+                "8) Navega páginas con ◀/▶ y usa Zoom +/- para precisión visual.\n"
+                "9) Cuando termines, pulsa Exportar PDF para generar un archivo nuevo con overlays."
             ),
         )
+
+    def _replace_existing_overlay_image(self, overlay_uid: str) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Reemplazar imagen",
+            "",
+            "Imágenes (*.png *.jpg *.jpeg *.bmp)",
+        )
+        if not file_path:
+            return
+        self.service.update_overlay_image(
+            overlay_uid=overlay_uid,
+            image_bytes=Path(file_path).read_bytes(),
+            image_ext=Path(file_path).suffix.lstrip("."),
+        )
+        self._render_page()

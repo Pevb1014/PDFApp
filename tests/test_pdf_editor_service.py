@@ -93,3 +93,17 @@ def test_editor_service_add_image_overlay() -> None:
     )
     assert overlay.kind == "image_add"
     assert service.list_overlays()[0].image_ext == "png"
+
+
+def test_editor_service_update_overlay_image() -> None:
+    service = PDFEditorService()
+    overlay = service.add_image_overlay(
+        page_index=0,
+        rect=(0, 0, 50, 50),
+        image_bytes=b"imgA",
+        image_ext="png",
+    )
+    service.update_overlay_image(overlay.uid, b"imgB", image_ext="jpg")
+    updated = service.list_overlays()[0]
+    assert updated.image_bytes == b"imgB"
+    assert updated.image_ext == "jpg"

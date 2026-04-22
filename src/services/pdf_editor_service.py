@@ -53,6 +53,13 @@ class PDFEditorService:
     def remove_overlay(self, overlay_uid: str) -> None:
         self._overlays = [item for item in self._overlays if item.uid != overlay_uid]
 
+    def update_overlay_image(self, overlay_uid: str, image_bytes: bytes, image_ext: str = "png") -> None:
+        for idx, item in enumerate(self._overlays):
+            if item.uid == overlay_uid:
+                self._overlays[idx].image_bytes = image_bytes
+                self._overlays[idx].image_ext = image_ext
+                return
+
     def add_text_overlay(
         self,
         page_index: int,
