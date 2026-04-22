@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QByteArray, QPointF, QRectF, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QBuffer, QByteArray, QPoint, QPointF, QRectF, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QColorDialog,
@@ -36,10 +36,9 @@ class DrawSignatureDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Dibujar firma")
         self.setMinimumSize(420, 220)
-        self._image = QImage(400, 160, QImage.Format.Format_ARGB32)
-        self._image.fill(Qt.GlobalColor.white)
-        self._last = None
+        self.canvas = SignatureCanvas()
         layout = QVBoxLayout(self)
+        layout.addWidget(self.canvas)
         actions = QHBoxLayout()
         ok_btn = QPushButton("Usar firma")
         ok_btn.clicked.connect(self.accept)
@@ -51,15 +50,32 @@ class DrawSignatureDialog(QDialog):
         layout.addStretch()
         layout.addLayout(actions)
 
+    def signature_png(self) -> bytes:
+        ba = QByteArray()
+        buffer = QBuffer(ba)
+        buffer.open(QBuffer.OpenModeFlag.WriteOnly)
+        self.canvas.image.save(buffer, "PNG")
+        buffer.close()
+        return bytes(ba)
+
+
+class SignatureCanvas(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedSize(400, 160)
+        self.image = QImage(400, 160, QImage.Format.Format_ARGB32)
+        self.image.fill(Qt.GlobalColor.white)
+        self._last: QPoint | None = None
+
     def mousePressEvent(self, event):  # type: ignore[override]
         self._last = event.position().toPoint()
 
     def mouseMoveEvent(self, event):  # type: ignore[override]
         if self._last is None:
             return
-        painter = QPainter(self._image)
-        painter.setPen(QPen(Qt.GlobalColor.black, 2))
         current = event.position().toPoint()
+        painter = QPainter(self.image)
+        painter.setPen(QPen(Qt.GlobalColor.black, 2))
         painter.drawLine(self._last, current)
         painter.end()
         self._last = current
@@ -67,27 +83,27 @@ class DrawSignatureDialog(QDialog):
 
     def paintEvent(self, event):  # type: ignore[override]
         painter = QPainter(self)
-        painter.fillRect(self.rect(), Qt.GlobalColor.lightGray)
-        painter.drawImage(10, 40, self._image)
-
-    def signature_png(self) -> bytes:
-        ba = QByteArray()
-        buffer = QBuffer(ba)
-        buffer.open(QBuffer.OpenModeFlag.WriteOnly)
-        self._image.save(buffer, "PNG")
-        buffer.close()
-        return bytes(ba)
+        painter.drawImage(0, 0, self.image)
 
 
 class InlineTextEdit(QTextEdit):
     """Editor inline que notifica al perder foco sin tocar objetos eliminados."""
 
     editing_finished = pyqtSignal()
+    submit_requested = pyqtSignal()
 
     def focusOutEvent(self, event):  # type: ignore[override]
         super().focusOutEvent(event)
         # Evita reentrancia/destrucción durante el propio focusOut.
         QTimer.singleShot(0, self.editing_finished.emit)
+
+    def keyPressEvent(self, event):  # type: ignore[override]
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and (
+            event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            self.submit_requested.emit()
+            return
+        super().keyPressEvent(event)
 
 
 class PDFEditorWindow(QMainWindow):
@@ -99,6 +115,12 @@ class PDFEditorWindow(QMainWindow):
         self.zoom = 1.2
         self.mode = "text_edit"
         self.current_color = QColor("black")
+        self.mode_map = {
+            "Editar texto existente": "text_edit",
+            "Agregar texto nuevo": "text_add",
+            "Firmar documento": "sign",
+        }
+        self._active_commit = None
 
         self.setWindowTitle(f"PDF Editor - {pdf_path.name}")
         self.resize(1300, 820)
@@ -122,8 +144,8 @@ class PDFEditorWindow(QMainWindow):
         self.addToolBar(bar)
 
         mode_box = QComboBox()
-        mode_box.addItems(["text_edit", "text_add", "sign"])
-        mode_box.currentTextChanged.connect(self._set_mode)
+        mode_box.addItems(list(self.mode_map.keys()))
+        mode_box.currentTextChanged.connect(self._set_mode_from_label)
         bar.addWidget(mode_box)
 
         self.font_box = QFontComboBox()
@@ -158,6 +180,10 @@ class PDFEditorWindow(QMainWindow):
         export.triggered.connect(self._export_pdf)
         bar.addAction(export)
 
+    def _set_mode_from_label(self, label: str) -> None:
+        self._commit_active_editor()
+        self.mode = self.mode_map.get(label, "text_edit")
+
     def _set_mode(self, mode: str) -> None:
         self.mode = mode
 
@@ -167,14 +193,17 @@ class PDFEditorWindow(QMainWindow):
             self.current_color = chosen
 
     def _change_zoom(self, delta: float) -> None:
+        self._commit_active_editor()
         self.zoom = max(0.4, min(3.0, self.zoom + delta))
         self._render_page()
 
     def _prev_page(self) -> None:
+        self._commit_active_editor()
         self.page_index = max(0, self.page_index - 1)
         self._render_page()
 
     def _next_page(self) -> None:
+        self._commit_active_editor()
         total = self.service.page_count(self.pdf_path)
         self.page_index = min(total - 1, self.page_index + 1)
         self._render_page()
@@ -188,6 +217,7 @@ class PDFEditorWindow(QMainWindow):
         )
 
     def _render_page(self) -> None:
+        self._active_commit = None
         self.scene.clear()
         png = self.service.render_page(self.pdf_path, self.page_index, self.zoom)
         pix = QPixmap()
@@ -203,7 +233,24 @@ class PDFEditorWindow(QMainWindow):
                 rect.setPen(QPen(QColor(50, 130, 255, 120), 1))
                 self.scene.addItem(rect)
 
+        self._render_overlays()
+
+    def _render_overlays(self) -> None:
+        for overlay in self.service.list_overlays():
+            if overlay.page_index != self.page_index:
+                continue
+            if overlay.kind in {"text_add", "text_edit", "signature_text"}:
+                self._draw_overlay_text(overlay.rect, overlay.text, color=QColor.fromRgbF(*overlay.style.color_rgb))
+            elif overlay.kind in {"signature_image", "signature_draw"} and overlay.image_bytes:
+                self._draw_overlay_image(overlay.rect, overlay.image_bytes)
+
+    def _commit_active_editor(self) -> None:
+        if callable(self._active_commit):
+            self._active_commit()
+            self._active_commit = None
+
     def _on_view_click(self, event):  # type: ignore[override]
+        self._commit_active_editor()
         pos = self.view.mapToScene(event.pos())
         x_pdf = pos.x() / self.zoom
         y_pdf = pos.y() / self.zoom
@@ -224,6 +271,7 @@ class PDFEditorWindow(QMainWindow):
         self._draw_overlay_text(rect, text)
 
     def _edit_text_block(self, x: float, y: float) -> None:
+        self._commit_active_editor()
         blocks = self.service.get_text_blocks(self.pdf_path, self.page_index)
         target = None
         for x0, y0, x1, y1, t in blocks:
@@ -256,6 +304,8 @@ class PDFEditorWindow(QMainWindow):
             self._render_page()
 
         editor.editing_finished.connect(commit)
+        editor.submit_requested.connect(commit)
+        self._active_commit = commit
         editor.setFocus()
 
     def _add_signature_overlay(self, x: float, y: float) -> None:
@@ -289,10 +339,12 @@ class PDFEditorWindow(QMainWindow):
                 self.service.add_signature_draw_overlay(self.page_index, rect, image_bytes)
                 self._draw_overlay_image(rect, image_bytes)
 
-    def _draw_overlay_text(self, rect: tuple[float, float, float, float], text: str) -> None:
+    def _draw_overlay_text(
+        self, rect: tuple[float, float, float, float], text: str, color: QColor | None = None
+    ) -> None:
         x0, y0, x1, y1 = rect
         item = QGraphicsTextItem(text)
-        item.setDefaultTextColor(self.current_color)
+        item.setDefaultTextColor(color or self.current_color)
         item.setPos(x0 * self.zoom, y0 * self.zoom)
         item.setTextWidth((x1 - x0) * self.zoom)
         item.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsMovable, True)
@@ -310,6 +362,7 @@ class PDFEditorWindow(QMainWindow):
         self.scene.addItem(item)
 
     def _export_pdf(self) -> None:
+        self._commit_active_editor()
         out_path, _ = QFileDialog.getSaveFileName(self, "Exportar PDF", str(self.pdf_path.with_name("editado.pdf")), "PDF (*.pdf)")
         if not out_path:
             return
