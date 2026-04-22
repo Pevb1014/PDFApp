@@ -86,12 +86,13 @@ class SignatureCanvas(QWidget):
 
 
 class OverlayTextItem(QGraphicsTextItem):
-    def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_edit) -> None:
+    def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_edit, on_resize) -> None:
         super().__init__(overlay.text)
         self.overlay = overlay
         self.zoom = zoom
         self.on_move = on_move
         self.on_edit = on_edit
+        self.on_resize = on_resize
         self.setTextWidth((overlay.rect[2] - overlay.rect[0]) * zoom)
         self.setPos(overlay.rect[0] * zoom, overlay.rect[1] * zoom)
         self.setDefaultTextColor(QColor.fromRgbF(*overlay.style.color_rgb))
@@ -112,6 +113,14 @@ class OverlayTextItem(QGraphicsTextItem):
         super().mouseDoubleClickEvent(event)
         self.on_edit(self.overlay.uid, self.overlay.text)
 
+    def resize_by_factor(self, factor: float) -> None:
+        x1, y1, x2, y2 = self.overlay.rect
+        new_w = max(60.0, (x2 - x1) * factor)
+        new_h = max(24.0, (y2 - y1) * factor)
+        self.setTextWidth(new_w * self.zoom)
+        self.overlay.rect = (x1, y1, x1 + new_w, y1 + new_h)
+        self.on_resize(self.overlay.uid, self.overlay.rect)
+
 
 class OverlayImageItem(QGraphicsPixmapItem):
     def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_replace, on_scale, on_resize) -> None:
@@ -122,6 +131,7 @@ class OverlayImageItem(QGraphicsPixmapItem):
         super().__init__(pix.scaled(w, h))
         self.overlay = overlay
         self.zoom = zoom
+        self.base_pixmap = pix
         self.on_move = on_move
         self.on_replace = on_replace
         self.on_scale = on_scale
@@ -140,10 +150,12 @@ class OverlayImageItem(QGraphicsPixmapItem):
         self.on_move(self.overlay.uid, (x, y, x + w, y + h))
 
     def resize_by_factor(self, factor: float) -> None:
-        new_w = max(20.0, (self.overlay.rect[2] - self.overlay.rect[0]) * factor)
-        new_h = max(20.0, (self.overlay.rect[3] - self.overlay.rect[1]) * factor)
-        x, y = self.overlay.rect[0], self.overlay.rect[1]
-        self.on_move(self.overlay.uid, (x, y, x + new_w, y + new_h))
+        x1, y1, x2, y2 = self.overlay.rect
+        new_w = max(20.0, (x2 - x1) * factor)
+        new_h = max(20.0, (y2 - y1) * factor)
+        self.overlay.rect = (x1, y1, x1 + new_w, y1 + new_h)
+        self.setPixmap(self.base_pixmap.scaled(int(new_w * self.zoom), int(new_h * self.zoom)))
+        self.on_move(self.overlay.uid, self.overlay.rect)
 
     def mousePressEvent(self, event):  # type: ignore[override]
         if event.button() == Qt.MouseButton.RightButton:
@@ -314,6 +326,17 @@ class PDFEditorWindow(QMainWindow):
             self._add_signature_overlay(x_pdf, y_pdf)
 
     def _on_view_wheel(self, event):  # type: ignore[override]
+        hovered = self.view.itemAt(event.position().toPoint())
+        if isinstance(hovered, OverlayImageItem):
+            factor = 1.08 if event.angleDelta().y() > 0 else 0.92
+            hovered.resize_by_factor(factor)
+            event.accept()
+            return
+        if isinstance(hovered, OverlayTextItem):
+            factor = 1.08 if event.angleDelta().y() > 0 else 0.92
+            hovered.resize_by_factor(factor)
+            event.accept()
+            return
         QGraphicsView.wheelEvent(self.view, event)
 
     def _add_text_overlay(self, x: float, y: float) -> None:
@@ -375,6 +398,7 @@ class PDFEditorWindow(QMainWindow):
             zoom=self.zoom,
             on_move=self.service.update_overlay_rect,
             on_edit=self._edit_existing_overlay_text,
+            on_resize=self.service.update_overlay_rect,
         )
         self.scene.addItem(item)
 
@@ -430,10 +454,11 @@ class PDFEditorWindow(QMainWindow):
                 "3) Arrastra cualquier texto/imagen/firma para posicionarlo exactamente.\n"
                 "4) Doble click en texto para editar contenido. Si queda vacío, se elimina.\n"
                 "5) Click derecho sobre imagen para abrir menú: reemplazar, re-escalar (%) o ajustar ancho/alto.\n"
-                "6) Doble click en imagen también permite reemplazar por otra.\n"
-                "7) Ajusta tipo de letra, tamaño y color desde la barra antes de insertar o al re-editar texto.\n"
-                "8) Navega páginas con ◀/▶ y usa Zoom +/- para precisión visual.\n"
-                "9) Cuando termines, pulsa Exportar PDF para generar un archivo nuevo con overlays."
+                "6) Usa la rueda del mouse sobre una imagen o texto para redimensionar en tiempo real.\n"
+                "7) Doble click en imagen también permite reemplazar por otra.\n"
+                "8) Ajusta tipo de letra, tamaño y color desde la barra antes de insertar o al re-editar texto.\n"
+                "9) Navega páginas con ◀/▶ y usa Zoom +/- para precisión visual.\n"
+                "10) Cuando termines, pulsa Exportar PDF para generar un archivo nuevo con overlays."
             ),
         )
 
