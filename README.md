@@ -182,6 +182,9 @@ Características principales del editor:
 - Modos visibles en UI: **Agregar texto nuevo**, **Firmar documento**.
 - `Agregar texto nuevo`: inserta texto como superposición y luego puedes moverlo visualmente.
 - `Firmar documento`: firma por texto, imagen PNG o dibujo a mano alzada, con reposicionamiento por arrastre.
+- Las superposiciones se pueden arrastrar con click sostenido para ajustar posición.
+- Doble click sobre un texto agregado para editar su contenido nuevamente.
+- El tipo de letra, tamaño y color se aplican visualmente en el editor a cada texto nuevo/editado.
 - Sistema de capas por superposiciones (sin modificar directamente el contenido original).
 - Exportación reconstruyendo PDF base + overlays.
 

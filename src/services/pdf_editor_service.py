@@ -37,6 +37,19 @@ class PDFEditorService:
                 self._overlays[idx].rect = rect
                 return
 
+    def update_overlay_text(
+        self,
+        overlay_uid: str,
+        text: str,
+        style: OverlayStyle | None = None,
+    ) -> None:
+        for idx, item in enumerate(self._overlays):
+            if item.uid == overlay_uid:
+                self._overlays[idx].text = text
+                if style is not None:
+                    self._overlays[idx].style = style
+                return
+
     def add_text_overlay(
         self,
         page_index: int,

@@ -51,3 +51,21 @@ def test_editor_service_updates_overlay_rect() -> None:
     service.update_overlay_rect(overlay.uid, (20, 30, 110, 60))
     updated = service.list_overlays()[0]
     assert updated.rect == (20, 30, 110, 60)
+
+
+def test_editor_service_updates_overlay_text_and_style() -> None:
+    service = PDFEditorService()
+    overlay = service.add_text_overlay(
+        page_index=0,
+        rect=(10, 10, 100, 40),
+        text="Texto A",
+        style=OverlayStyle(font_family="Helvetica", font_size=12),
+    )
+    service.update_overlay_text(
+        overlay.uid,
+        "Texto B",
+        style=OverlayStyle(font_family="Times", font_size=18, color_rgb=(1, 0, 0)),
+    )
+    updated = service.list_overlays()[0]
+    assert updated.text == "Texto B"
+    assert updated.style.font_size == 18

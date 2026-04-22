@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import QBuffer, QByteArray, QPoint, Qt
-from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QAction, QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QColorDialog,
     QComboBox,
@@ -85,14 +85,17 @@ class SignatureCanvas(QWidget):
 
 
 class OverlayTextItem(QGraphicsTextItem):
-    def __init__(self, overlay: OverlayItem, zoom: float, on_move) -> None:
+    def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_edit) -> None:
         super().__init__(overlay.text)
         self.overlay = overlay
         self.zoom = zoom
         self.on_move = on_move
+        self.on_edit = on_edit
         self.setTextWidth((overlay.rect[2] - overlay.rect[0]) * zoom)
         self.setPos(overlay.rect[0] * zoom, overlay.rect[1] * zoom)
         self.setDefaultTextColor(QColor.fromRgbF(*overlay.style.color_rgb))
+        font = QFont(overlay.style.font_family, int(overlay.style.font_size))
+        self.setFont(font)
         self.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsSelectable, True)
 
@@ -103,6 +106,10 @@ class OverlayTextItem(QGraphicsTextItem):
         w = (self.overlay.rect[2] - self.overlay.rect[0])
         h = (self.overlay.rect[3] - self.overlay.rect[1])
         self.on_move(self.overlay.uid, (x, y, x + w, y + h))
+
+    def mouseDoubleClickEvent(self, event):  # type: ignore[override]
+        super().mouseDoubleClickEvent(event)
+        self.on_edit(self.overlay.uid, self.overlay.text)
 
 
 class OverlayImageItem(QGraphicsPixmapItem):
@@ -252,6 +259,11 @@ class PDFEditorWindow(QMainWindow):
                 self._draw_overlay_image(overlay)
 
     def _on_view_click(self, event):  # type: ignore[override]
+        clicked_item = self.view.itemAt(event.pos())
+        if isinstance(clicked_item, (OverlayTextItem, OverlayImageItem)):
+            QGraphicsView.mousePressEvent(self.view, event)
+            return
+
         pos = self.view.mapToScene(event.pos())
         x_pdf = pos.x() / self.zoom
         y_pdf = pos.y() / self.zoom
@@ -301,7 +313,12 @@ class PDFEditorWindow(QMainWindow):
                 self._render_page()
 
     def _draw_overlay_text(self, overlay: OverlayItem) -> None:
-        item = OverlayTextItem(overlay=overlay, zoom=self.zoom, on_move=self.service.update_overlay_rect)
+        item = OverlayTextItem(
+            overlay=overlay,
+            zoom=self.zoom,
+            on_move=self.service.update_overlay_rect,
+            on_edit=self._edit_existing_overlay_text,
+        )
         self.scene.addItem(item)
 
     def _draw_overlay_image(self, overlay: OverlayItem) -> None:
@@ -317,3 +334,10 @@ class PDFEditorWindow(QMainWindow):
             QMessageBox.information(self, "Éxito", f"PDF exportado en:\n{out_path}")
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
+
+    def _edit_existing_overlay_text(self, overlay_uid: str, current_text: str) -> None:
+        new_text, ok = QInputDialog.getMultiLineText(self, "Editar texto", "Contenido:", current_text)
+        if not ok or not new_text.strip():
+            return
+        self.service.update_overlay_text(overlay_uid, new_text.strip(), style=self._style())
+        self._render_page()
