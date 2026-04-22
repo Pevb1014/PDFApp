@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QByteArray, QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import QBuffer, QByteArray, QPointF, QRectF, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QColorDialog,
@@ -85,8 +85,9 @@ class InlineTextEdit(QTextEdit):
     editing_finished = pyqtSignal()
 
     def focusOutEvent(self, event):  # type: ignore[override]
-        self.editing_finished.emit()
         super().focusOutEvent(event)
+        # Evita reentrancia/destrucción durante el propio focusOut.
+        QTimer.singleShot(0, self.editing_finished.emit)
 
 
 class PDFEditorWindow(QMainWindow):
