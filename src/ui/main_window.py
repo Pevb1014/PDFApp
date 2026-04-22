@@ -47,11 +47,12 @@ class MainWindow(ttk.Frame):
         self.preview_current_pdf: Path | None = None
         self.preview_images: list[tk.PhotoImage] = []
         self.preview_tab_display_name = "👁️ Vista"
-        self.preview_temp_dir: Path | None = None
+        self.word_preview_cache: dict[Path, tuple[float, Path, Path]] = {}
 
         self._configure_styles()
         self._build_ui()
         self._enable_fullscreen_on_start()
+        self.master.protocol("WM_DELETE_WINDOW", self._on_main_close)
 
     def _enable_fullscreen_on_start(self) -> None:
         try:
@@ -703,14 +704,23 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.yview_moveto(0)
 
     def _render_word_in_app_viewer(self, input_docx: Path) -> None:
-        self._cleanup_preview_temp_files()
+        current_mtime = input_docx.stat().st_mtime
+        cached = self.word_preview_cache.get(input_docx)
+        if cached and cached[0] == current_mtime and cached[1].exists():
+            temp_pdf = cached[1]
+            self._render_pdf_in_app_viewer(temp_pdf, display_name=input_docx.name, allow_edit=False)
+            self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word / docx2pdf cache)")
+            self._set_status("Vista Word renderizada desde caché")
+            return
+
         try:
             temp_dir = Path(tempfile.mkdtemp(prefix="word_preview_docx2pdf_"))
             temp_pdf = temp_dir / f"{input_docx.stem}_preview.pdf"
             self.pdf_service.convert_docx_to_pdf(input_docx, temp_pdf)
-            self.preview_temp_dir = temp_dir
+            self.word_preview_cache[input_docx] = (current_mtime, temp_pdf, temp_dir)
         except Exception:
-            self._cleanup_preview_temp_files()
+            if "temp_dir" in locals():
+                shutil.rmtree(temp_dir, ignore_errors=True)
             messagebox.showwarning(
                 "Visualización Word",
                 "No se pudo convertir Word con docx2pdf para previsualizar.\n"
@@ -744,7 +754,6 @@ class MainWindow(ttk.Frame):
             self._set_status("Error al abrir editor PDF")
 
     def _clear_preview(self) -> None:
-        self._cleanup_preview_temp_files()
         self.preview_canvas.delete("all")
         self.preview_images = []
         self.preview_current_pdf = None
@@ -784,10 +793,11 @@ class MainWindow(ttk.Frame):
         if event.x >= (x1 + width - close_width):
             self._clear_preview()
 
-    def _cleanup_preview_temp_files(self) -> None:
-        if self.preview_temp_dir is not None:
-            shutil.rmtree(self.preview_temp_dir, ignore_errors=True)
-            self.preview_temp_dir = None
+    def _on_main_close(self) -> None:
+        for _, (_, _pdf_path, temp_dir) in self.word_preview_cache.items():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        self.word_preview_cache.clear()
+        self.master.destroy()
 
     def _edit_pdf(self) -> None:
         """Abre el editor de PDF avanzado (PyQt6) para edición por superposiciones."""
