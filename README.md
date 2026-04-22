@@ -37,6 +37,13 @@ source .venv/bin/activate  # En Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+### Dependencia opcional para vista Word mejorada (Spire.Doc)
+Si quieres que la visualización de archivos Word en la pestaña integrada intente usar **Spire.Doc** (cuando esté disponible), instala además:
+```bash
+pip install -r requirements-optional-word-preview.txt
+```
+> Nota: se mantiene como dependencia opcional para no romper instalaciones base en entornos donde `spire-doc` no esté disponible.
+
 ## Ejecución
 ```bash
 python main.py
@@ -196,3 +203,4 @@ Características principales del editor:
 Notas:
 - La edición genera un PDF nuevo (no sobrescribe el original automáticamente).
 - Para firma con imagen se aceptan formatos comunes (`.png`, `.jpg`, `.jpeg`, `.bmp`).
+- En la visualización de Word, la app intenta usar **Spire.Doc** si está instalado; si no, usa automáticamente el fallback con `python-docx`.
