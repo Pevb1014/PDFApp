@@ -185,8 +185,8 @@ Características principales del editor:
 - `Firmar documento`: firma por texto, imagen PNG o dibujo a mano alzada, con reposicionamiento por arrastre.
 - Las superposiciones se pueden arrastrar con click sostenido para ajustar posición.
 - Doble click sobre un texto agregado para editar su contenido nuevamente.
-- Doble click sobre una imagen para reemplazarla por otra.
-- Redimensiona imágenes usando la rueda del mouse sobre la imagen.
+- Doble click sobre una imagen para abrir opciones avanzadas: reemplazar, re-escalar (%) o ajustar ancho/alto.
+- También puedes redimensionar imágenes usando la rueda del mouse sobre la imagen.
 - Si en la edición de doble click dejas el texto vacío y aceptas, el overlay se elimina.
 - El tipo de letra, tamaño y color de la barra se aplican también al re-editar textos existentes.
 - Desde el botón **Instrucciones** en la barra del editor puedes ver una guía rápida de uso.
