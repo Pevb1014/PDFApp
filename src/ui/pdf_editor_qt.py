@@ -545,16 +545,24 @@ class PDFEditorWindow(QMainWindow):
             self,
             "Instrucciones de uso",
             (
-                "1) Selecciona un modo: Agregar texto, Insertar imagen o Firmar.\n"
-                "2) Haz click sobre la página para insertar el elemento.\n"
-                "3) Arrastra cualquier texto/imagen/firma para posicionarlo exactamente.\n"
-                "4) Doble click en texto para editar contenido. Si queda vacío, se elimina.\n"
-                "5) Click derecho sobre imagen/firma para abrir menú: reemplazar, re-escalar (%), ajustar ancho/alto o eliminar.\n"
-                "6) Usa la rueda del mouse sobre una imagen o texto para redimensionar en tiempo real.\n"
-                "7) Doble click en imagen también permite reemplazar por otra.\n"
-                "8) Ajusta tipo de letra, tamaño y color desde la barra antes de insertar o al re-editar texto.\n"
-                "9) Navega páginas con ◀/▶ y usa Zoom +/- para precisión visual.\n"
-                "10) Cuando termines, pulsa Exportar PDF para generar un archivo nuevo con overlays."
+                "🧭 Flujo general\n"
+                "• Selecciona un modo: Agregar texto, Insertar imagen o Firmar.\n"
+                "• Haz click sobre la página para insertar el elemento.\n"
+                "• Arrastra texto/imagen/firma para ubicarlo con precisión.\n\n"
+                "📝 Texto\n"
+                "• Doble click en texto para editar contenido.\n"
+                "• Si el contenido queda vacío, el texto se elimina.\n"
+                "• Si seleccionas un texto, puedes ajustar fuente/tamaño/color desde la barra y ver cambios en tiempo real.\n\n"
+                "🖼️ Imágenes y firmas\n"
+                "• Click derecho en imagen/firma: reemplazar, re-escalar (%), ajustar ancho/alto o eliminar.\n"
+                "• Doble click en imagen/firma para reemplazar rápidamente.\n"
+                "• Usa la rueda del mouse sobre imagen o texto para redimensionar en tiempo real.\n\n"
+                "⌨️ Atajos\n"
+                "• Tecla Delete/Backspace: elimina overlays seleccionados (texto, imagen o firma).\n\n"
+                "📄 Navegación y exportación\n"
+                "• Navega páginas con ◀/▶.\n"
+                "• Usa Zoom +/- para más precisión visual.\n"
+                "• Al terminar, pulsa Exportar PDF para generar un archivo nuevo con overlays."
             ),
         )
 
