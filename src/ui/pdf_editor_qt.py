@@ -282,9 +282,6 @@ class PDFEditorWindow(QMainWindow):
     def _set_mode_from_label(self, label: str) -> None:
         self.mode = self.mode_map.get(label, "text_add")
 
-    def _set_mode(self, mode: str) -> None:
-        self.mode = mode
-
     def _pick_color(self) -> None:
         selected = self._selected_text_item()
         if selected is None:
