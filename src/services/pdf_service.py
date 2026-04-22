@@ -710,3 +710,26 @@ class PDFService:
             return output_path
         finally:
             document.close()
+
+    def render_pdf_page_preview(self, input_path: Path, page_number: int = 1, zoom: float = 1.2) -> bytes:
+        """Renderiza una página de PDF como PNG para previsualización en UI."""
+        document = self._pdf_edit_adapter.open_document(input_path)
+        try:
+            if page_number < 1 or page_number > len(document):
+                raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
+            page = document[page_number - 1]
+            matrix = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            return pix.tobytes("png")
+        finally:
+            document.close()
+
+    def extract_text_from_page(self, input_path: Path, page_number: int = 1) -> str:
+        """Extrae texto de una página específica para vista previa."""
+        document = self._pdf_edit_adapter.open_document(input_path)
+        try:
+            if page_number < 1 or page_number > len(document):
+                raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
+            return document[page_number - 1].get_text().strip()
+        finally:
+            document.close()

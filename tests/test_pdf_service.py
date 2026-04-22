@@ -242,3 +242,23 @@ def test_sign_pdf_adds_visible_signature_text(tmp_path: Path) -> None:
     text = doc[0].get_text()
     doc.close()
     assert "Firmado por: Ana Perez" in text
+
+
+def test_render_pdf_page_preview_returns_png_bytes(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "preview.pdf"
+    _make_text_pdf(input_pdf, "Vista previa")
+
+    service = PDFService()
+    image_bytes = service.render_pdf_page_preview(input_pdf, page_number=1, zoom=1.0)
+
+    assert image_bytes.startswith(b"\x89PNG")
+
+
+def test_extract_text_from_page_returns_page_content(tmp_path: Path) -> None:
+    input_pdf = tmp_path / "page_text.pdf"
+    _make_text_pdf(input_pdf, "Contenido pagina 1")
+
+    service = PDFService()
+    page_text = service.extract_text_from_page(input_pdf, page_number=1)
+
+    assert "Contenido pagina 1" in page_text

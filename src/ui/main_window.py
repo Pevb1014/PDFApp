@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import base64
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from src.services.file_service import FileService
 from src.services.pdf_service import PDFService
@@ -621,6 +622,10 @@ class MainWindow(ttk.Frame):
 
     def _edit_pdf(self) -> None:
         """Permite editar texto existente, agregar contenido y firmar un PDF."""
+        if not self.loaded_files:
+            messagebox.showwarning("Editar PDF", "No hay archivos cargados.")
+            return
+
         selected_idx = self._selected_pdf_index()
         if selected_idx is None:
             messagebox.showwarning("Editar PDF", "Selecciona un PDF de la lista.")
@@ -631,114 +636,156 @@ class MainWindow(ttk.Frame):
             messagebox.showwarning("Editar PDF", "La edición solo está disponible para archivos PDF.")
             return
 
-        options = self._ask_pdf_edit_options()
-        if not options:
-            return
+        self._open_pdf_edit_dialog(input_pdf)
 
-        output_path_raw = filedialog.asksaveasfilename(
-            title="Guardar PDF editado",
-            defaultextension=".pdf",
-            initialfile=f"{input_pdf.stem}_editado.pdf",
-            filetypes=[("PDF files", "*.pdf")],
-        )
-        if not output_path_raw:
-            return
+    def _open_pdf_edit_dialog(self, input_pdf: Path) -> None:
+        """Diálogo gráfico para visualizar y editar el PDF seleccionado."""
+        dialog = tk.Toplevel(self)
+        dialog.title(f"✍️ Editor PDF - {input_pdf.name}")
+        dialog.geometry("1100x760")
+        dialog.grab_set()
 
-        output_path = self.file_service.prepare_output_path(str(ensure_pdf_extension(output_path_raw)))
+        total_pages = self.pdf_service.get_total_pages(input_pdf)
 
-        try:
-            mode = options["mode"]
-            if mode == "replace":
-                res = self.pdf_service.replace_text_in_pdf(
-                    input_path=input_pdf,
-                    output_path=output_path,
-                    search_text=str(options["search_text"]),
-                    replace_text=str(options["replace_text"]),
-                )
-            elif mode == "add":
-                res = self.pdf_service.add_text_to_pdf(
-                    input_path=input_pdf,
-                    output_path=output_path,
-                    text=str(options["text"]),
-                    page_number=int(options["page_number"]),
-                    x=float(options["x"]),
-                    y=float(options["y"]),
-                )
-            else:
-                res = self.pdf_service.sign_pdf(
-                    input_path=input_pdf,
-                    output_path=output_path,
-                    signer_name=str(options["signer_name"]),
-                    page_number=int(options["page_number"]) if options["page_number"] else None,
-                    signature_image_path=Path(str(options["signature_image_path"]))
-                    if options.get("signature_image_path")
-                    else None,
-                )
+        mode_var = tk.StringVar(value="replace")
+        page_var = tk.IntVar(value=1)
+        signature_image_var = tk.StringVar(value="")
 
-            self._set_status(f"PDF editado: {res.name}")
-            messagebox.showinfo("Éxito", f"Archivo generado:\n{res}")
-        except Exception as exc:
-            messagebox.showerror("Error", human_error(exc))
-            self._set_status("Error al editar PDF")
+        main = ttk.Frame(dialog, padding=10)
+        main.pack(fill=tk.BOTH, expand=True)
+        main.columnconfigure(0, weight=3)
+        main.columnconfigure(1, weight=2)
+        main.rowconfigure(0, weight=1)
 
-    def _ask_pdf_edit_options(self) -> dict[str, str | int | float] | None:
-        """Solicita opciones de edición/firma de PDF con diálogos simples."""
-        operation = simpledialog.askstring(
-            "Editar PDF",
-            "Elige operación: replace (reemplazar texto), add (agregar texto), sign (firmar).",
-            parent=self,
-        )
-        if not operation:
-            return None
+        preview_frame = ttk.LabelFrame(main, text="Vista previa del PDF", padding=10)
+        preview_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        preview_frame.rowconfigure(1, weight=1)
+        preview_frame.columnconfigure(0, weight=1)
 
-        op = operation.strip().lower()
-        if op == "replace":
-            search_text = simpledialog.askstring("Reemplazar", "Texto a buscar:", parent=self)
-            if search_text is None:
-                return None
-            replace_text = simpledialog.askstring("Reemplazar", "Texto nuevo:", parent=self)
-            if replace_text is None:
-                return None
-            return {"mode": "replace", "search_text": search_text, "replace_text": replace_text}
+        top_bar = ttk.Frame(preview_frame)
+        top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(top_bar, text=f"Página (1-{total_pages}):").pack(side=tk.LEFT)
+        page_spin = ttk.Spinbox(top_bar, from_=1, to=total_pages, textvariable=page_var, width=6)
+        page_spin.pack(side=tk.LEFT, padx=(6, 8))
 
-        if op == "add":
-            text = simpledialog.askstring("Agregar texto", "Texto a insertar:", parent=self)
-            if text is None:
-                return None
-            page_number = simpledialog.askinteger("Agregar texto", "Página (1..N):", initialvalue=1, parent=self)
-            if page_number is None:
-                return None
-            x = simpledialog.askfloat("Agregar texto", "Posición X (pt):", initialvalue=72.0, parent=self)
-            y = simpledialog.askfloat("Agregar texto", "Posición Y (pt):", initialvalue=72.0, parent=self)
-            if x is None or y is None:
-                return None
-            return {"mode": "add", "text": text, "page_number": page_number, "x": x, "y": y}
+        image_label = ttk.Label(preview_frame, anchor=tk.CENTER)
+        image_label.grid(row=1, column=0, sticky="nsew")
+        page_text = scrolledtext.ScrolledText(preview_frame, height=8, font=("Consolas", 9))
+        page_text.grid(row=2, column=0, sticky="ew", pady=(8, 0))
 
-        if op == "sign":
-            signer_name = simpledialog.askstring("Firmar PDF", "Nombre del firmante:", parent=self)
-            if signer_name is None:
-                return None
-            page_number = simpledialog.askinteger(
-                "Firmar PDF",
-                "Página para firma (vacío = última):",
-                parent=self,
+        controls = ttk.LabelFrame(main, text="Configuración de edición", padding=10)
+        controls.grid(row=0, column=1, sticky="nsew")
+        controls.columnconfigure(1, weight=1)
+
+        ttk.Label(controls, text="Operación:").grid(row=0, column=0, sticky="w", pady=4)
+        mode_combo = ttk.Combobox(controls, textvariable=mode_var, values=["replace", "add", "sign"], state="readonly")
+        mode_combo.grid(row=0, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Buscar texto:").grid(row=1, column=0, sticky="w", pady=4)
+        search_entry = ttk.Entry(controls)
+        search_entry.grid(row=1, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Reemplazar por:").grid(row=2, column=0, sticky="w", pady=4)
+        replace_entry = ttk.Entry(controls)
+        replace_entry.grid(row=2, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Texto a agregar:").grid(row=3, column=0, sticky="w", pady=4)
+        add_text_entry = ttk.Entry(controls)
+        add_text_entry.grid(row=3, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Posición X:").grid(row=4, column=0, sticky="w", pady=4)
+        x_entry = ttk.Entry(controls)
+        x_entry.insert(0, "72")
+        x_entry.grid(row=4, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Posición Y:").grid(row=5, column=0, sticky="w", pady=4)
+        y_entry = ttk.Entry(controls)
+        y_entry.insert(0, "72")
+        y_entry.grid(row=5, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Firmante:").grid(row=6, column=0, sticky="w", pady=4)
+        signer_entry = ttk.Entry(controls)
+        signer_entry.grid(row=6, column=1, sticky="ew", pady=4)
+
+        ttk.Label(controls, text="Imagen firma:").grid(row=7, column=0, sticky="w", pady=4)
+        image_entry = ttk.Entry(controls, textvariable=signature_image_var)
+        image_entry.grid(row=7, column=1, sticky="ew", pady=4)
+
+        def select_signature_image() -> None:
+            chosen = filedialog.askopenfilename(
+                title="Selecciona imagen de firma",
+                filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.bmp")],
             )
-            use_image = messagebox.askyesno("Firma", "¿Deseas agregar una imagen de firma?")
-            signature_image_path = ""
-            if use_image:
-                signature_image_path = filedialog.askopenfilename(
-                    title="Selecciona imagen de firma",
-                    filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.bmp")],
-                )
-            return {
-                "mode": "sign",
-                "signer_name": signer_name,
-                "page_number": page_number or 0,
-                "signature_image_path": signature_image_path,
-            }
+            if chosen:
+                signature_image_var.set(chosen)
 
-        messagebox.showwarning("Editar PDF", "Operación inválida. Usa: replace, add o sign.")
-        return None
+        create_button(controls, "Seleccionar imagen", select_signature_image).grid(
+            row=8, column=1, sticky="e", pady=(4, 8)
+        )
+
+        def refresh_preview() -> None:
+            current_page = page_var.get()
+            image_bytes = self.pdf_service.render_pdf_page_preview(input_pdf, page_number=current_page, zoom=1.0)
+            encoded = base64.b64encode(image_bytes).decode("ascii")
+            photo = tk.PhotoImage(data=encoded)
+            image_label.configure(image=photo)
+            image_label.image = photo
+
+            extracted = self.pdf_service.extract_text_from_page(input_pdf, page_number=current_page) or "[Sin texto]"
+            page_text.delete("1.0", tk.END)
+            page_text.insert(tk.END, extracted)
+
+        def apply_edit() -> None:
+            output_path_raw = filedialog.asksaveasfilename(
+                title="Guardar PDF editado",
+                defaultextension=".pdf",
+                initialfile=f"{input_pdf.stem}_editado.pdf",
+                filetypes=[("PDF files", "*.pdf")],
+            )
+            if not output_path_raw:
+                return
+
+            output_path = self.file_service.prepare_output_path(str(ensure_pdf_extension(output_path_raw)))
+            try:
+                mode = mode_var.get()
+                if mode == "replace":
+                    result = self.pdf_service.replace_text_in_pdf(
+                        input_path=input_pdf,
+                        output_path=output_path,
+                        search_text=search_entry.get(),
+                        replace_text=replace_entry.get(),
+                    )
+                elif mode == "add":
+                    result = self.pdf_service.add_text_to_pdf(
+                        input_path=input_pdf,
+                        output_path=output_path,
+                        text=add_text_entry.get(),
+                        page_number=page_var.get(),
+                        x=float(x_entry.get()),
+                        y=float(y_entry.get()),
+                    )
+                else:
+                    signature_image = signature_image_var.get().strip()
+                    result = self.pdf_service.sign_pdf(
+                        input_path=input_pdf,
+                        output_path=output_path,
+                        signer_name=signer_entry.get(),
+                        page_number=page_var.get(),
+                        signature_image_path=Path(signature_image) if signature_image else None,
+                    )
+
+                self._set_status(f"PDF editado: {result.name}")
+                messagebox.showinfo("Éxito", f"Archivo generado:\n{result}")
+            except Exception as exc:
+                messagebox.showerror("Error", human_error(exc))
+                self._set_status("Error al editar PDF")
+
+        action_row = ttk.Frame(controls)
+        action_row.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        create_button(action_row, "Actualizar vista", refresh_preview).pack(side=tk.LEFT, padx=(0, 6))
+        create_button(action_row, "Aplicar edición", apply_edit, style="Primary.TButton").pack(side=tk.LEFT)
+
+        refresh_preview()
 
     def _ask_split_options(self, input_pdf: Path) -> dict[str, int | str | None] | None:
         """Muestra el diálogo para configurar la división de un PDF con campos dinámicos."""

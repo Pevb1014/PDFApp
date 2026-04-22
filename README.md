@@ -178,3 +178,4 @@ La interfaz incluye la acción **"✍️ Editar / Firmar PDF"** para el archivo 
 Notas:
 - La edición genera un PDF nuevo (no sobrescribe el original automáticamente).
 - Para firma con imagen se aceptan formatos comunes (`.png`, `.jpg`, `.jpeg`, `.bmp`).
+- El editor abre una ventana gráfica con **vista previa de página** y texto detectado para facilitar la edición.
