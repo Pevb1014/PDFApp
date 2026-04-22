@@ -49,6 +49,7 @@ class MainWindow(ttk.Frame):
         self.preview_images: list[tk.PhotoImage] = []
         self.preview_tab_display_name = "👁️ Vista"
         self.preview_temp_dir: Path | None = None
+        self._spire_notice_shown = False
 
         self._configure_styles()
         self._build_ui()
@@ -727,7 +728,7 @@ class MainWindow(ttk.Frame):
         self._set_preview_tab_title(input_docx.name)
         self.preview_images = []
         self.preview_current_pdf = None
-        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word)")
+        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word / fallback python-docx)")
         self._show_word_preview_mode()
         self.preview_word_text.configure(state=tk.NORMAL)
         self.preview_word_text.delete("1.0", tk.END)
@@ -800,6 +801,9 @@ class MainWindow(ttk.Frame):
             from spire.doc import Document as SpireDocument  # type: ignore
             from spire.doc import FileFormat  # type: ignore
         except Exception:
+            if not self._spire_notice_shown:
+                self._set_status("Spire.Doc no disponible: usando vista Word fallback (python-docx)")
+                self._spire_notice_shown = True
             return False
 
         self._cleanup_preview_temp_files()
@@ -816,6 +820,7 @@ class MainWindow(ttk.Frame):
 
         self._render_pdf_in_app_viewer(temp_pdf, display_name=input_docx.name, allow_edit=False)
         self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word / Spire.Doc)")
+        self._set_status("Vista Word renderizada con Spire.Doc")
         return True
 
     def _on_preview_mousewheel(self, event) -> None:
