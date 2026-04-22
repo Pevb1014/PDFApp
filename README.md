@@ -179,13 +179,15 @@ La app incluye un editor de escritorio avanzado (PyQt6 + PyMuPDF) accesible desd
 
 Características principales del editor:
 - Renderizado visual de página PDF en lienzo desplazable.
-- Modos visibles en UI: **Agregar texto nuevo**, **Firmar documento**.
+- Modos visibles en UI: **Agregar texto nuevo**, **Insertar imagen**, **Firmar documento**.
 - `Agregar texto nuevo`: inserta texto como superposición y luego puedes moverlo visualmente.
+- `Insertar imagen`: añade imágenes al PDF como overlay, con arrastre y redimensión.
 - `Firmar documento`: firma por texto, imagen PNG o dibujo a mano alzada, con reposicionamiento por arrastre.
 - Las superposiciones se pueden arrastrar con click sostenido para ajustar posición.
 - Doble click sobre un texto agregado para editar su contenido nuevamente.
 - Si en la edición de doble click dejas el texto vacío y aceptas, el overlay se elimina.
 - El tipo de letra, tamaño y color de la barra se aplican también al re-editar textos existentes.
+- Desde el botón **Instrucciones** en la barra del editor puedes ver una guía rápida de uso.
 - Sistema de capas por superposiciones (sin modificar directamente el contenido original).
 - Exportación reconstruyendo PDF base + overlays.
 

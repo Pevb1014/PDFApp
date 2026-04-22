@@ -81,3 +81,15 @@ def test_editor_service_remove_overlay() -> None:
     )
     service.remove_overlay(overlay.uid)
     assert service.list_overlays() == []
+
+
+def test_editor_service_add_image_overlay() -> None:
+    service = PDFEditorService()
+    overlay = service.add_image_overlay(
+        page_index=0,
+        rect=(10, 20, 100, 120),
+        image_bytes=b"fakepngbytes",
+        image_ext="png",
+    )
+    assert overlay.kind == "image_add"
+    assert service.list_overlays()[0].image_ext == "png"

@@ -8,6 +8,7 @@ from typing import Literal
 OverlayKind = Literal[
     "text_edit",
     "text_add",
+    "image_add",
     "signature_text",
     "signature_image",
     "signature_draw",

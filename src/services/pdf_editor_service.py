@@ -103,6 +103,23 @@ class PDFEditorService:
         self.add_overlay(overlay)
         return overlay
 
+    def add_image_overlay(
+        self,
+        page_index: int,
+        rect: tuple[float, float, float, float],
+        image_bytes: bytes,
+        image_ext: str = "png",
+    ) -> OverlayItem:
+        overlay = OverlayItem(
+            kind="image_add",
+            page_index=page_index,
+            rect=rect,
+            image_bytes=image_bytes,
+            image_ext=image_ext,
+        )
+        self.add_overlay(overlay)
+        return overlay
+
     def add_signature_draw_overlay(
         self,
         page_index: int,

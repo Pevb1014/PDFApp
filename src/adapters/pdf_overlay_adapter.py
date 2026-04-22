@@ -55,7 +55,7 @@ class PDFOverlayAdapter:
                         fontname="helv",
                         color=color,
                     )
-                elif item.kind in {"signature_image", "signature_draw"} and item.image_bytes:
+                elif item.kind in {"signature_image", "signature_draw", "image_add"} and item.image_bytes:
                     stream = io.BytesIO(item.image_bytes)
                     page.insert_image(rect, stream=stream.getvalue(), keep_proportion=True)
 

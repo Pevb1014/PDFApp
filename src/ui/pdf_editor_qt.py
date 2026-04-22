@@ -125,6 +125,7 @@ class OverlayImageItem(QGraphicsPixmapItem):
         self.setPos(overlay.rect[0] * zoom, overlay.rect[1] * zoom)
         self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsFocusable, True)
 
     def mouseReleaseEvent(self, event):  # type: ignore[override]
         super().mouseReleaseEvent(event)
@@ -133,6 +134,15 @@ class OverlayImageItem(QGraphicsPixmapItem):
         w = (self.overlay.rect[2] - self.overlay.rect[0])
         h = (self.overlay.rect[3] - self.overlay.rect[1])
         self.on_move(self.overlay.uid, (x, y, x + w, y + h))
+
+    def wheelEvent(self, event):  # type: ignore[override]
+        delta = event.delta() if hasattr(event, "delta") else event.angleDelta().y()
+        factor = 1.1 if delta > 0 else 0.9
+        new_w = max(20.0, (self.overlay.rect[2] - self.overlay.rect[0]) * factor)
+        new_h = max(20.0, (self.overlay.rect[3] - self.overlay.rect[1]) * factor)
+        x, y = self.overlay.rect[0], self.overlay.rect[1]
+        self.on_move(self.overlay.uid, (x, y, x + new_w, y + new_h))
+        event.accept()
 
 
 class PDFEditorWindow(QMainWindow):
@@ -146,6 +156,7 @@ class PDFEditorWindow(QMainWindow):
         self.current_color = QColor("black")
         self.mode_map = {
             "Agregar texto nuevo": "text_add",
+            "Insertar imagen": "image_add",
             "Firmar documento": "sign",
         }
 
@@ -207,6 +218,10 @@ class PDFEditorWindow(QMainWindow):
         export.triggered.connect(self._export_pdf)
         bar.addAction(export)
 
+        help_action = QAction("Instrucciones", self)
+        help_action.triggered.connect(self._show_instructions)
+        bar.addAction(help_action)
+
     def _set_mode_from_label(self, label: str) -> None:
         self.mode = self.mode_map.get(label, "text_add")
 
@@ -255,7 +270,7 @@ class PDFEditorWindow(QMainWindow):
                 continue
             if overlay.kind in {"text_add", "text_edit", "signature_text"}:
                 self._draw_overlay_text(overlay)
-            elif overlay.kind in {"signature_image", "signature_draw"} and overlay.image_bytes:
+            elif overlay.kind in {"signature_image", "signature_draw", "image_add"} and overlay.image_bytes:
                 self._draw_overlay_image(overlay)
 
     def _on_view_click(self, event):  # type: ignore[override]
@@ -270,6 +285,8 @@ class PDFEditorWindow(QMainWindow):
 
         if self.mode == "text_add":
             self._add_text_overlay(x_pdf, y_pdf)
+        elif self.mode == "image_add":
+            self._add_image_overlay(x_pdf, y_pdf)
         else:
             self._add_signature_overlay(x_pdf, y_pdf)
 
@@ -312,6 +329,20 @@ class PDFEditorWindow(QMainWindow):
                 self.service.add_signature_draw_overlay(self.page_index, rect, image_bytes)
                 self._render_page()
 
+    def _add_image_overlay(self, x: float, y: float) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Selecciona imagen para insertar",
+            "",
+            "Imágenes (*.png *.jpg *.jpeg *.bmp)",
+        )
+        if not file_path:
+            return
+        image_bytes = Path(file_path).read_bytes()
+        rect = (x, y, x + 250, y + 120)
+        self.service.add_image_overlay(self.page_index, rect, image_bytes, image_ext=Path(file_path).suffix.lstrip("."))
+        self._render_page()
+
     def _draw_overlay_text(self, overlay: OverlayItem) -> None:
         item = OverlayTextItem(
             overlay=overlay,
@@ -349,3 +380,17 @@ class PDFEditorWindow(QMainWindow):
         # Reaplica estilo actual de toolbar para permitir cambiar fuente/tamaño/color
         self.service.update_overlay_text(overlay_uid, cleaned, style=self._style())
         self._render_page()
+
+    def _show_instructions(self) -> None:
+        QMessageBox.information(
+            self,
+            "Instrucciones de uso",
+            (
+                "1) Selecciona modo: Agregar texto, Insertar imagen o Firmar.\n"
+                "2) Haz click en el PDF para crear el elemento.\n"
+                "3) Arrastra texto/imagen/firma para ajustar posición.\n"
+                "4) Doble click en un texto para editarlo; si queda vacío se elimina.\n"
+                "5) Para imágenes, usa la rueda del mouse sobre la imagen para redimensionar.\n"
+                "6) Usa Exportar PDF para guardar los cambios en un nuevo archivo."
+            ),
+        )
