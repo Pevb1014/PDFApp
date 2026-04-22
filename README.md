@@ -37,12 +37,8 @@ source .venv/bin/activate  # En Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Dependencia opcional para vista Word mejorada (Spire.Doc)
-Si quieres que la visualización de archivos Word en la pestaña integrada intente usar **Spire.Doc** (cuando esté disponible), instala además:
-```bash
-pip install -r requirements-optional-word-preview.txt
-```
-> Nota: se mantiene como dependencia opcional para no romper instalaciones base en entornos donde `spire-doc` no esté disponible.
+### Vista Word mejorada (Spire.Doc)
+La visualización de archivos Word en la pestaña integrada intenta usar **Spire.Doc** (incluido en `requirements.txt`) y, si falla, aplica fallback automático con `python-docx`.
 
 ## Ejecución
 ```bash

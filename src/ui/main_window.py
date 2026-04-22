@@ -802,7 +802,7 @@ class MainWindow(ttk.Frame):
             from spire.doc import FileFormat  # type: ignore
         except Exception:
             if not self._spire_notice_shown:
-                self._set_status("Spire.Doc no disponible: usando vista Word fallback (python-docx)")
+                self._set_status("Spire.Doc no disponible (pip install spire-doc): usando fallback python-docx")
                 self._spire_notice_shown = True
             return False
 
@@ -817,6 +817,15 @@ class MainWindow(ttk.Frame):
         except Exception:
             self._cleanup_preview_temp_files()
             return False
+
+        # Spire.Doc en modo evaluación añade un warning visual; en ese caso usar fallback.
+        try:
+            preview_text = self.pdf_service.extract_text_from_page(temp_pdf, page_number=1)
+            if "Evaluation Warning: The document was created with Spire.Doc for Python" in (preview_text or ""):
+                self._cleanup_preview_temp_files()
+                return False
+        except Exception:
+            pass
 
         self._render_pdf_in_app_viewer(temp_pdf, display_name=input_docx.name, allow_edit=False)
         self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word / Spire.Doc)")
@@ -874,10 +883,9 @@ class MainWindow(ttk.Frame):
         self.preview_word_text.grid_remove()
         self.preview_canvas.grid(row=0, column=0, sticky="nsew")
         self.preview_scrollbar.grid()
-        if allow_edit and not self.edit_preview_btn.winfo_ismapped():
+        self.edit_preview_btn.pack_forget()
+        if allow_edit:
             self.edit_preview_btn.pack(side=tk.RIGHT)
-        if not allow_edit and self.edit_preview_btn.winfo_ismapped():
-            self.edit_preview_btn.pack_forget()
         self.preview_scrollbar.configure(command=self.preview_canvas.yview)
         self.preview_canvas.configure(yscrollcommand=self.preview_scrollbar.set)
 
