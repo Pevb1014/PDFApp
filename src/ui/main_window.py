@@ -9,7 +9,6 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from docx import Document
 from src.services.file_service import FileService
 from src.services.pdf_service import PDFService
 from src.services.viewer_service import ViewerService
@@ -49,7 +48,6 @@ class MainWindow(ttk.Frame):
         self.preview_images: list[tk.PhotoImage] = []
         self.preview_tab_display_name = "👁️ Vista"
         self.preview_temp_dir: Path | None = None
-        self._spire_notice_shown = False
 
         self._configure_styles()
         self._build_ui()
@@ -211,23 +209,6 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.bind("<MouseWheel>", self._on_preview_mousewheel)
         self.preview_canvas.bind("<Button-4>", self._on_preview_mousewheel)
         self.preview_canvas.bind("<Button-5>", self._on_preview_mousewheel)
-
-        self.preview_word_text = tk.Text(
-            viewer_container,
-            wrap=tk.WORD,
-            font=("Calibri", 11),
-            bg="#ffffff",
-            relief=tk.FLAT,
-            borderwidth=0,
-        )
-        self.preview_word_text.tag_configure("title", font=("Segoe UI", 12, "bold"), foreground="#1a73e8")
-        self.preview_word_text.tag_configure("heading1", font=("Segoe UI", 14, "bold"))
-        self.preview_word_text.tag_configure("heading2", font=("Segoe UI", 12, "bold"))
-        self.preview_word_text.tag_configure("heading3", font=("Segoe UI", 11, "bold"))
-        self.preview_word_text.tag_configure("bold", font=("Calibri", 11, "bold"))
-        self.preview_word_text.tag_configure("italic", font=("Calibri", 11, "italic"))
-        self.preview_word_text.tag_configure("table", font=("Consolas", 10), foreground="#3c4043")
-        self.preview_word_text.configure(state=tk.DISABLED)
 
         # 3. Barra de estado
         status_bar = ttk.Frame(self, relief=tk.SUNKEN, padding=(10, 2))
@@ -722,115 +703,25 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.yview_moveto(0)
 
     def _render_word_in_app_viewer(self, input_docx: Path) -> None:
-        if self._try_render_word_with_spire(input_docx):
-            return
-
-        self._set_preview_tab_title(input_docx.name)
-        self.preview_images = []
-        self.preview_current_pdf = None
-        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word / fallback python-docx)")
-        self._show_word_preview_mode()
-        self.preview_word_text.configure(state=tk.NORMAL)
-        self.preview_word_text.delete("1.0", tk.END)
-
-        doc = Document(str(input_docx))
-        self.preview_word_text.insert(tk.END, f"{input_docx.name}\n", "title")
-        self.preview_word_text.insert(tk.END, "-" * max(40, len(input_docx.name)) + "\n\n")
-
-        for paragraph in doc.paragraphs:
-            style_name = (paragraph.style.name or "").lower() if paragraph.style else ""
-            style_tag = ()
-            prefix = ""
-            if style_name.startswith("heading 1"):
-                style_tag = ("heading1",)
-            elif style_name.startswith("heading 2"):
-                style_tag = ("heading2",)
-            elif style_name.startswith("heading 3"):
-                style_tag = ("heading3",)
-            elif "list" in style_name or "bullet" in style_name:
-                prefix = "• "
-
-            if prefix:
-                self.preview_word_text.insert(tk.END, prefix)
-
-            if not paragraph.runs:
-                plain_text = paragraph.text.strip()
-                if plain_text:
-                    self.preview_word_text.insert(tk.END, f"{plain_text}\n", style_tag)
-                continue
-
-            for run in paragraph.runs:
-                run_tags: tuple[str, ...] = style_tag
-                if run.bold:
-                    run_tags += ("bold",)
-                if run.italic:
-                    run_tags += ("italic",)
-                self.preview_word_text.insert(tk.END, run.text, run_tags)
-            self.preview_word_text.insert(tk.END, "\n")
-
-        for table in doc.tables:
-            self.preview_word_text.insert(tk.END, "\n[Tabla]\n", ("table",))
-            for row in table.rows:
-                row_values = [cell.text.strip().replace("\n", " ") for cell in row.cells]
-                line = " | ".join(value if value else "-" for value in row_values)
-                self.preview_word_text.insert(tk.END, f"{line}\n", ("table",))
-
-        # Inserta imágenes embebidas del documento si existen (sin conversión a PDF)
-        self.preview_word_text.insert(tk.END, "\n")
-        for rel in doc.part.rels.values():
-            if "image" not in rel.reltype:
-                continue
-            image_blob = rel.target_part.blob
-            photo = self._photo_from_image_blob(image_blob)
-            if photo is None:
-                continue
-            self.preview_images.append(photo)
-            self.preview_word_text.insert(tk.END, "[Imagen]\n", ("table",))
-            self.preview_word_text.image_create(tk.END, image=photo)
-            self.preview_word_text.insert(tk.END, "\n\n")
-
-        self.preview_word_text.configure(state=tk.DISABLED)
-        self.preview_word_text.yview_moveto(0)
-
-    def _try_render_word_with_spire(self, input_docx: Path) -> bool:
-        """
-        Renderiza DOCX con Spire.Doc para vista previa visual.
-        Devuelve False si Spire.Doc no está disponible o falla el render.
-        """
-        try:
-            from spire.doc import Document as SpireDocument  # type: ignore
-            from spire.doc import FileFormat  # type: ignore
-        except Exception:
-            if not self._spire_notice_shown:
-                self._set_status("Spire.Doc no disponible (pip install spire-doc): usando fallback python-docx")
-                self._spire_notice_shown = True
-            return False
-
         self._cleanup_preview_temp_files()
         try:
-            temp_dir = Path(tempfile.mkdtemp(prefix="word_preview_spire_"))
+            temp_dir = Path(tempfile.mkdtemp(prefix="word_preview_docx2pdf_"))
             temp_pdf = temp_dir / f"{input_docx.stem}_preview.pdf"
-            doc = SpireDocument()
-            doc.LoadFromFile(str(input_docx))
-            doc.SaveToFile(str(temp_pdf), FileFormat.PDF)
+            self.pdf_service.convert_docx_to_pdf(input_docx, temp_pdf)
             self.preview_temp_dir = temp_dir
         except Exception:
             self._cleanup_preview_temp_files()
-            return False
-
-        # Spire.Doc en modo evaluación añade un warning visual; en ese caso usar fallback.
-        try:
-            preview_text = self.pdf_service.extract_text_from_page(temp_pdf, page_number=1)
-            if "Evaluation Warning: The document was created with Spire.Doc for Python" in (preview_text or ""):
-                self._cleanup_preview_temp_files()
-                return False
-        except Exception:
-            pass
+            messagebox.showwarning(
+                "Visualización Word",
+                "No se pudo convertir Word con docx2pdf para previsualizar.\n"
+                "Verifica que Microsoft Word esté disponible en el sistema.",
+            )
+            self._set_status("Fallback Word: error en docx2pdf")
+            return
 
         self._render_pdf_in_app_viewer(temp_pdf, display_name=input_docx.name, allow_edit=False)
-        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word / Spire.Doc)")
-        self._set_status("Vista Word renderizada con Spire.Doc")
-        return True
+        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word / docx2pdf)")
+        self._set_status("Vista Word renderizada con docx2pdf")
 
     def _on_preview_mousewheel(self, event) -> None:
         if getattr(event, "num", None) == 4:
@@ -857,9 +748,6 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.delete("all")
         self.preview_images = []
         self.preview_current_pdf = None
-        self.preview_word_text.configure(state=tk.NORMAL)
-        self.preview_word_text.delete("1.0", tk.END)
-        self.preview_word_text.configure(state=tk.DISABLED)
         self.preview_title_var.set("Visualización cerrada. Selecciona un archivo de la lista para visualizar.")
         self._set_preview_tab_title("👁️ Vista")
         self._show_pdf_preview_mode(allow_edit=False)
@@ -871,16 +759,7 @@ class MainWindow(ttk.Frame):
         self.preview_tab_display_name = trimmed
         self.workspace_notebook.tab(self.preview_tab_index, text=f"{trimmed}  ✕")
 
-    def _show_word_preview_mode(self) -> None:
-        self.preview_canvas.grid_remove()
-        self.preview_word_text.grid(row=0, column=0, sticky="nsew")
-        self.edit_preview_btn.pack_forget()
-        self.preview_scrollbar.grid()
-        self.preview_scrollbar.configure(command=self.preview_word_text.yview)
-        self.preview_word_text.configure(yscrollcommand=self.preview_scrollbar.set)
-
     def _show_pdf_preview_mode(self, *, allow_edit: bool) -> None:
-        self.preview_word_text.grid_remove()
         self.preview_canvas.grid(row=0, column=0, sticky="nsew")
         self.preview_scrollbar.grid()
         self.edit_preview_btn.pack_forget()
@@ -888,13 +767,6 @@ class MainWindow(ttk.Frame):
             self.edit_preview_btn.pack(side=tk.RIGHT)
         self.preview_scrollbar.configure(command=self.preview_canvas.yview)
         self.preview_canvas.configure(yscrollcommand=self.preview_scrollbar.set)
-
-    def _photo_from_image_blob(self, image_blob: bytes) -> tk.PhotoImage | None:
-        try:
-            encoded = base64.b64encode(image_blob).decode("ascii")
-            return tk.PhotoImage(data=encoded)
-        except Exception:
-            return None
 
     def _on_notebook_click(self, event) -> None:
         try:
