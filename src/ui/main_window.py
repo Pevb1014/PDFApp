@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import shutil
+import subprocess
+import sys
 import tempfile
 import tkinter as tk
 from pathlib import Path
@@ -623,7 +625,7 @@ class MainWindow(ttk.Frame):
             messagebox.showerror("Error", human_error(exc))
 
     def _edit_pdf(self) -> None:
-        """Permite editar texto existente, agregar contenido y firmar un PDF."""
+        """Abre el editor de PDF avanzado (PyQt6) para edición por superposiciones."""
         if not self.loaded_files:
             messagebox.showwarning("Editar PDF", "No hay archivos cargados.")
             return
@@ -638,7 +640,12 @@ class MainWindow(ttk.Frame):
             messagebox.showwarning("Editar PDF", "La edición solo está disponible para archivos PDF.")
             return
 
-        self._open_pdf_edit_dialog(input_pdf)
+        try:
+            subprocess.Popen([sys.executable, "-m", "src.ui.pdf_editor_app", str(input_pdf)])
+            self._set_status(f"Editor PDF abierto para {input_pdf.name}")
+        except Exception as exc:
+            messagebox.showerror("Error", human_error(exc))
+            self._set_status("Error al abrir editor PDF")
 
     def _open_pdf_edit_dialog(self, input_pdf: Path) -> None:
         """Diálogo gráfico para visualizar y editar el PDF seleccionado."""

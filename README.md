@@ -169,7 +169,7 @@ Después de convertir con `pdf2docx`, la app aplica limpieza de layout:
 
 
 ## Edición y firma de PDF
-La interfaz incluye la acción **"✍️ Editar / Firmar PDF"** para el archivo PDF seleccionado:
+La app incluye un editor de escritorio avanzado (PyQt6 + PyMuPDF) accesible desde **"✍️ Editar / Firmar PDF"**:
 
 1. `replace`: reemplaza un texto por otro en todo el documento.
 2. `add`: agrega texto directamente donde haces click en la vista del PDF.
@@ -177,8 +177,15 @@ La interfaz incluye la acción **"✍️ Editar / Firmar PDF"** para el archivo 
 4. `image`: inserta una imagen en la posición clicada.
 5. `sign`: añade firma visible (texto + imagen opcional) justo en la posición clicada.
 
+Características principales del editor:
+- Renderizado visual de página PDF en lienzo desplazable.
+- Modos de interacción: `text_edit`, `text_add`, `sign`.
+- `text_edit`: detecta bloques (`get_text("blocks")`), permite edición en línea y guarda como superposición.
+- `text_add`: inserta texto en posición clicada con estilo configurable.
+- `sign`: firma por texto, imagen PNG o dibujo a mano alzada.
+- Sistema de capas por superposiciones (sin modificar directamente el contenido original).
+- Exportación reconstruyendo PDF base + overlays.
+
 Notas:
 - La edición genera un PDF nuevo (no sobrescribe el original automáticamente).
 - Para firma con imagen se aceptan formatos comunes (`.png`, `.jpg`, `.jpeg`, `.bmp`).
-- El editor abre una ventana gráfica con **vista previa de página** y texto detectado para facilitar la edición.
-- El flujo es interactivo tipo editor visual: seleccionas modo y luego haces click en el lugar del PDF donde quieres aplicar la acción.

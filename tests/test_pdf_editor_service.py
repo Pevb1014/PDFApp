@@ -1,0 +1,40 @@
+from pathlib import Path
+
+import pytest
+
+fitz = pytest.importorskip("fitz")
+
+from src.core.editor_models import OverlayStyle
+from src.services.pdf_editor_service import PDFEditorService
+
+
+def _make_text_pdf(path: Path, text: str) -> None:
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    doc.save(str(path))
+    doc.close()
+
+
+def test_editor_service_detects_blocks_and_exports_overlay(tmp_path: Path) -> None:
+    source = tmp_path / "source.pdf"
+    out = tmp_path / "out.pdf"
+    _make_text_pdf(source, "Texto base")
+
+    service = PDFEditorService()
+    blocks = service.get_text_blocks(source, 0)
+    assert len(blocks) >= 1
+
+    service.add_text_overlay(
+        page_index=0,
+        rect=(100, 100, 260, 160),
+        text="Overlay texto",
+        style=OverlayStyle(font_size=14),
+    )
+    service.export(source, out)
+
+    assert out.exists()
+    exported = fitz.open(str(out))
+    text = exported[0].get_text()
+    exported.close()
+    assert "Overlay texto" in text
