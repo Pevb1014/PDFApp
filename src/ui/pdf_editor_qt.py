@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -113,7 +114,7 @@ class OverlayTextItem(QGraphicsTextItem):
 
 
 class OverlayImageItem(QGraphicsPixmapItem):
-    def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_replace) -> None:
+    def __init__(self, overlay: OverlayItem, zoom: float, on_move, on_replace, on_scale, on_resize) -> None:
         pix = QPixmap()
         pix.loadFromData(overlay.image_bytes or b"", "PNG")
         w = int((overlay.rect[2] - overlay.rect[0]) * zoom)
@@ -123,6 +124,8 @@ class OverlayImageItem(QGraphicsPixmapItem):
         self.zoom = zoom
         self.on_move = on_move
         self.on_replace = on_replace
+        self.on_scale = on_scale
+        self.on_resize = on_resize
         self.setPos(overlay.rect[0] * zoom, overlay.rect[1] * zoom)
         self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -141,6 +144,23 @@ class OverlayImageItem(QGraphicsPixmapItem):
         new_h = max(20.0, (self.overlay.rect[3] - self.overlay.rect[1]) * factor)
         x, y = self.overlay.rect[0], self.overlay.rect[1]
         self.on_move(self.overlay.uid, (x, y, x + new_w, y + new_h))
+
+    def mousePressEvent(self, event):  # type: ignore[override]
+        if event.button() == Qt.MouseButton.RightButton:
+            menu = QMenu()
+            replace_action = menu.addAction("Reemplazar imagen")
+            scale_action = menu.addAction("Re-escalar (%)")
+            resize_action = menu.addAction("Ajustar ancho/alto")
+            chosen = menu.exec(event.screenPos())
+            if chosen == replace_action:
+                self.on_replace(self.overlay.uid)
+            elif chosen == scale_action:
+                self.on_scale(self.overlay.uid)
+            elif chosen == resize_action:
+                self.on_resize(self.overlay.uid)
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event):  # type: ignore[override]
         super().mouseDoubleClickEvent(event)
@@ -294,13 +314,6 @@ class PDFEditorWindow(QMainWindow):
             self._add_signature_overlay(x_pdf, y_pdf)
 
     def _on_view_wheel(self, event):  # type: ignore[override]
-        hovered = self.view.itemAt(event.position().toPoint())
-        if isinstance(hovered, OverlayImageItem):
-            factor = 1.12 if event.angleDelta().y() > 0 else 0.9
-            hovered.resize_by_factor(factor)
-            self._render_page()
-            event.accept()
-            return
         QGraphicsView.wheelEvent(self.view, event)
 
     def _add_text_overlay(self, x: float, y: float) -> None:
@@ -371,8 +384,16 @@ class PDFEditorWindow(QMainWindow):
             zoom=self.zoom,
             on_move=self.service.update_overlay_rect,
             on_replace=self._replace_existing_overlay_image,
+            on_scale=self._scale_existing_overlay_image,
+            on_resize=self._resize_existing_overlay_image,
         )
         self.scene.addItem(item)
+
+    def _find_overlay(self, overlay_uid: str) -> OverlayItem | None:
+        for overlay in self.service.list_overlays():
+            if overlay.uid == overlay_uid:
+                return overlay
+        return None
 
     def _export_pdf(self) -> None:
         out_path, _ = QFileDialog.getSaveFileName(self, "Exportar PDF", str(self.pdf_path.with_name("editado.pdf")), "PDF (*.pdf)")
@@ -408,8 +429,8 @@ class PDFEditorWindow(QMainWindow):
                 "2) Haz click sobre la página para insertar el elemento.\n"
                 "3) Arrastra cualquier texto/imagen/firma para posicionarlo exactamente.\n"
                 "4) Doble click en texto para editar contenido. Si queda vacío, se elimina.\n"
-                "5) Doble click en imagen para reemplazar por otra imagen.\n"
-                "6) Redimensiona imagen colocando el cursor sobre ella y usando la rueda del mouse.\n"
+                "5) Click derecho sobre imagen para abrir menú: reemplazar, re-escalar (%) o ajustar ancho/alto.\n"
+                "6) Doble click en imagen también permite reemplazar por otra.\n"
                 "7) Ajusta tipo de letra, tamaño y color desde la barra antes de insertar o al re-editar texto.\n"
                 "8) Navega páginas con ◀/▶ y usa Zoom +/- para precisión visual.\n"
                 "9) Cuando termines, pulsa Exportar PDF para generar un archivo nuevo con overlays."
@@ -430,4 +451,58 @@ class PDFEditorWindow(QMainWindow):
             image_bytes=Path(file_path).read_bytes(),
             image_ext=Path(file_path).suffix.lstrip("."),
         )
+        self._render_page()
+
+    def _scale_existing_overlay_image(self, overlay_uid: str) -> None:
+        overlay = self._find_overlay(overlay_uid)
+        if overlay is None:
+            return
+        percent, ok = QInputDialog.getDouble(
+            self,
+            "Re-escalar imagen",
+            "Escala (%)",
+            100.0,
+            10.0,
+            500.0,
+            1,
+        )
+        if not ok:
+            return
+        factor = percent / 100.0
+        x1, y1, x2, y2 = overlay.rect
+        width = max(20.0, (x2 - x1) * factor)
+        height = max(20.0, (y2 - y1) * factor)
+        self.service.update_overlay_rect(overlay_uid, (x1, y1, x1 + width, y1 + height))
+        self._render_page()
+
+    def _resize_existing_overlay_image(self, overlay_uid: str) -> None:
+        overlay = self._find_overlay(overlay_uid)
+        if overlay is None:
+            return
+        x1, y1, x2, y2 = overlay.rect
+        current_width = x2 - x1
+        current_height = y2 - y1
+        width, ok_w = QInputDialog.getDouble(
+            self,
+            "Ajustar tamaño",
+            "Ancho (pt)",
+            current_width,
+            20.0,
+            2000.0,
+            1,
+        )
+        if not ok_w:
+            return
+        height, ok_h = QInputDialog.getDouble(
+            self,
+            "Ajustar tamaño",
+            "Alto (pt)",
+            current_height,
+            20.0,
+            2000.0,
+            1,
+        )
+        if not ok_h:
+            return
+        self.service.update_overlay_rect(overlay_uid, (x1, y1, x1 + width, y1 + height))
         self._render_page()
