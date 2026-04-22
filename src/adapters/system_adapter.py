@@ -11,13 +11,10 @@ class SystemAdapter:
 
     @staticmethod
     def open_file(path: Path) -> None:
-<<<<<<< HEAD
-=======
         """
         Abre un archivo utilizando el comando predeterminado del SO.
         :param path: Ruta al archivo.
         """
->>>>>>> main
         system = platform.system()
         if system == "Windows":
             os.startfile(str(path))  # type: ignore[attr-defined]

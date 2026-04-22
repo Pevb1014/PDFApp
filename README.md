@@ -61,12 +61,9 @@ pyinstaller --noconfirm --clean --onefile --windowed --name PDFProcessor main.py
 - Para extracción de imágenes, incluye Pillow en el build (ya está en `requirements.txt`).
 
 ## MVP implementado
-<<<<<<< HEAD
-=======
 - **Interfaz Moderna**: UI renovada con estilos personalizados, iconos y disposición mejorada.
 - **Procesamiento por Lotes**: Extraer contenido o convertir a Word múltiples PDFs simultáneamente.
 - **Conversión Inversa**: Convertir uno o varios archivos Word (.docx) a PDF.
->>>>>>> main
 - Cargar uno o múltiples PDFs.
 - Listado de PDFs cargados.
 - Reordenar manualmente la lista (Subir/Bajar) para decidir un orden exacto de unión.

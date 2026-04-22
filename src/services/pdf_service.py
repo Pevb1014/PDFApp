@@ -19,17 +19,6 @@ MISSING_PILLOW_MSG = (
 
 
 class PDFService:
-<<<<<<< HEAD
-    """Casos de uso de negocio de procesamiento PDF."""
-
-    def __init__(self, pdf_adapter: PDFAdapter | None = None) -> None:
-        self._pdf_adapter = pdf_adapter or PDFAdapter()
-
-    def _image_extraction_available(self) -> bool:
-        return importlib.util.find_spec("PIL") is not None
-
-    def _ensure_image_support(self) -> None:
-=======
     """
     Casos de uso de negocio de procesamiento PDF.
     Contiene la lógica para unir, dividir, extraer texto y convertir PDFs a Word.
@@ -48,32 +37,25 @@ class PDFService:
 
     def _ensure_image_support(self) -> None:
         """Lanza un error si no hay soporte para imágenes."""
->>>>>>> main
         if not self._image_extraction_available():
             raise RuntimeError(MISSING_PILLOW_MSG)
 
     def get_total_pages(self, input_path: Path) -> int:
-<<<<<<< HEAD
-=======
         """
         Obtiene el número total de páginas de un PDF.
         :param input_path: Ruta al archivo PDF.
         :return: Cantidad de páginas.
         """
->>>>>>> main
         reader = self._pdf_adapter.reader(input_path)
         return len(reader.pages)
 
     def merge_pdfs(self, input_paths: Iterable[Path], output_path: Path) -> Path:
-<<<<<<< HEAD
-=======
         """
         Une múltiples archivos PDF en uno solo respetando el orden.
         :param input_paths: Lista de rutas de los PDFs a unir.
         :param output_path: Ruta donde se guardará el PDF resultante.
         :return: Ruta del archivo generado.
         """
->>>>>>> main
         writer = self._pdf_adapter.writer()
         for path in input_paths:
             reader = self._pdf_adapter.reader(path)
@@ -90,20 +72,6 @@ class PDFService:
         start_page: int | None = None,
         end_page: int | None = None,
     ) -> list[Path]:
-<<<<<<< HEAD
-        reader = self._pdf_adapter.reader(input_path)
-        total_pages = len(reader.pages)
-        if total_pages == 0:
-            raise ValueError("El PDF no contiene páginas")
-
-        start = 1 if start_page is None else start_page
-        end = total_pages if end_page is None else end_page
-
-        if start < 1 or end > total_pages or start > end:
-            raise ValueError(
-                f"Rango inválido. Debe estar entre 1 y {total_pages}, recibido {start}-{end}"
-            )
-=======
         """
         Divide un PDF por un rango de páginas específico.
         Ajusta automáticamente el rango si excede los límites del documento (clamping).
@@ -125,7 +93,6 @@ class PDFService:
         # Si el inicio está fuera del documento, no se puede dividir
         if start > total_pages:
             return []
->>>>>>> main
 
         output_dir.mkdir(parents=True, exist_ok=True)
         generated: list[Path] = []
@@ -141,19 +108,6 @@ class PDFService:
         return generated
 
     def split_pdf_by_parts(self, input_path: Path, output_dir: Path, num_parts: int) -> list[Path]:
-<<<<<<< HEAD
-        reader = self._pdf_adapter.reader(input_path)
-        total_pages = len(reader.pages)
-        if total_pages == 0:
-            raise ValueError("El PDF no contiene páginas")
-        if num_parts < 1 or num_parts > total_pages:
-            raise ValueError(
-                f"Número de partes inválido. Debe estar entre 1 y {total_pages}, recibido {num_parts}"
-            )
-
-        base_pages_per_part = total_pages // num_parts
-        remainder = total_pages % num_parts
-=======
         """
         Divide un PDF en un número determinado de partes equitativas.
         Si el PDF tiene menos páginas que partes, se divide en el máximo posible (1 página por parte).
@@ -174,17 +128,12 @@ class PDFService:
 
         base_pages_per_part = total_pages // actual_parts
         remainder = total_pages % actual_parts
->>>>>>> main
 
         output_dir.mkdir(parents=True, exist_ok=True)
         generated: list[Path] = []
         current_page = 0
 
-<<<<<<< HEAD
-        for part_index in range(1, num_parts + 1):
-=======
         for part_index in range(1, actual_parts + 1):
->>>>>>> main
             pages_in_this_part = base_pages_per_part + (1 if part_index <= remainder else 0)
             writer = self._pdf_adapter.writer()
 
@@ -201,9 +150,6 @@ class PDFService:
 
         return generated
 
-<<<<<<< HEAD
-    def parse_page_ranges(self, ranges_input: str, total_pages: int) -> list[tuple[int, int]]:
-=======
     def parse_page_ranges(self, ranges_input: str, total_pages: int, clamp: bool = False) -> list[tuple[int, int]]:
         """
         Parsea una cadena de rangos (ej: '1-5, 8, 10-12').
@@ -212,7 +158,6 @@ class PDFService:
         :param clamp: Si es True, ajusta los rangos a los límites del PDF en lugar de lanzar error.
         :return: Lista de tuplas (inicio, fin).
         """
->>>>>>> main
         if not ranges_input.strip():
             raise ValueError("Debes ingresar al menos un rango.")
 
@@ -231,34 +176,6 @@ class PDFService:
                 start = int(raw)
                 end = start
 
-<<<<<<< HEAD
-            if start < 1 or end > total_pages:
-                raise ValueError(f"Rango fuera de límites: {start}-{end}. Total de páginas: {total_pages}")
-            if start > end:
-                raise ValueError(f"Rango inválido: {start}-{end} (inicio mayor que fin)")
-
-            parsed_ranges.append((start, end))
-
-        if not parsed_ranges:
-            raise ValueError("No se detectaron rangos válidos.")
-
-        occupied_pages: set[int] = set()
-        for start, end in parsed_ranges:
-            page_set = set(range(start, end + 1))
-            if occupied_pages.intersection(page_set):
-                raise ValueError("No se permiten rangos solapados o repetidos.")
-            occupied_pages.update(page_set)
-
-        return parsed_ranges
-
-    def extract_page_ranges(self, input_path: Path, output_dir: Path, ranges_input: str) -> list[Path]:
-        reader = self._pdf_adapter.reader(input_path)
-        total_pages = len(reader.pages)
-        if total_pages == 0:
-            raise ValueError("El PDF no contiene páginas")
-
-        ranges = self.parse_page_ranges(ranges_input=ranges_input, total_pages=total_pages)
-=======
             if clamp:
                 # Ajustar a límites del documento
                 if start > total_pages:
@@ -297,7 +214,6 @@ class PDFService:
 
         # Usamos clamp=True para que sea flexible con archivos de distinta longitud
         ranges = self.parse_page_ranges(ranges_input=ranges_input, total_pages=total_pages, clamp=True)
->>>>>>> main
         output_dir.mkdir(parents=True, exist_ok=True)
 
         generated: list[Path] = []
@@ -314,10 +230,7 @@ class PDFService:
         return generated
 
     def extract_text(self, input_path: Path) -> str:
-<<<<<<< HEAD
-=======
         """Extrae todo el texto plano de un PDF."""
->>>>>>> main
         reader = self._pdf_adapter.reader(input_path)
         text_parts: list[str] = []
         for page in reader.pages:
@@ -325,15 +238,12 @@ class PDFService:
         return "\n".join(text_parts).strip()
 
     def extract_text_and_images(self, input_path: Path, output_dir: Path) -> dict[str, Path | int]:
-<<<<<<< HEAD
-=======
         """
         Extrae texto a un archivo .txt e imágenes a una carpeta 'images'.
         :param input_path: PDF de origen.
         :param output_dir: Carpeta de destino del contenido.
         :return: Diccionario con rutas y conteo de imágenes.
         """
->>>>>>> main
         self._ensure_image_support()
 
         reader = self._pdf_adapter.reader(input_path)
@@ -365,10 +275,7 @@ class PDFService:
         }
 
     def _add_hyperlink(self, paragraph, url: str, text: str) -> None:
-<<<<<<< HEAD
-=======
         """Añade un hipervínculo funcional a un párrafo de python-docx."""
->>>>>>> main
         part = paragraph.part
         r_id = part.relate_to(url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", True)
 
@@ -392,10 +299,7 @@ class PDFService:
         paragraph._p.append(hyperlink)
 
     def _write_text_with_links(self, paragraph, text: str) -> None:
-<<<<<<< HEAD
-=======
         """Detecta URLs en texto y las escribe como links en el párrafo."""
->>>>>>> main
         url_pattern = re.compile(r"https?://\S+")
         cursor = 0
         for match in url_pattern.finditer(text):
@@ -408,10 +312,7 @@ class PDFService:
             paragraph.add_run(text[cursor:])
 
     def _convert_pdf_to_docx_quick(self, input_path: Path, output_docx: Path) -> Path:
-<<<<<<< HEAD
-=======
         """Conversión básica a Word extrayendo texto e imágenes secuencialmente."""
->>>>>>> main
         from docx import Document
 
         reader = self._pdf_adapter.reader(input_path)
@@ -454,10 +355,7 @@ class PDFService:
         return output_docx
 
     def _convert_pdf_to_docx_structured_fallback(self, input_path: Path, output_docx: Path) -> Path:
-<<<<<<< HEAD
-=======
         """Conversión estructurada usando PyMuPDF para detectar bloques y pdfplumber para tablas."""
->>>>>>> main
         from docx import Document
 
         try:
@@ -558,10 +456,7 @@ class PDFService:
         return output_docx
 
     def _insert_paragraph_after(self, paragraph):
-<<<<<<< HEAD
-=======
         """Inserta un nuevo párrafo justo después de uno existente."""
->>>>>>> main
         new_p = OxmlElement("w:p")
         paragraph._p.addnext(new_p)
         from docx.text.paragraph import Paragraph
@@ -569,38 +464,6 @@ class PDFService:
         return Paragraph(new_p, paragraph._parent)
 
     def _fix_images_layout(self, docx_path: Path, max_width_inches: float = 6.0) -> None:
-<<<<<<< HEAD
-        from docx import Document
-
-        doc = Document(str(docx_path))
-        paragraphs = list(doc.paragraphs)
-
-        for paragraph in paragraphs:
-            image_runs = [run for run in paragraph.runs if run.element.xpath('.//pic:pic')]
-            if not image_runs:
-                continue
-
-            has_text = bool(paragraph.text.strip())
-            if has_text or len(paragraph.runs) > len(image_runs):
-                current = paragraph
-                for image_run in image_runs:
-                    image_para = self._insert_paragraph_after(current)
-                    image_para.add_run()._r.append(deepcopy(image_run._r))
-                    image_run._r.getparent().remove(image_run._r)
-                    current = image_para
-
-        for shape in doc.inline_shapes:
-            if shape.width > Inches(max_width_inches):
-                ratio = shape.height / shape.width
-                shape.width = Inches(max_width_inches)
-                shape.height = int(shape.width * ratio)
-
-        for paragraph in list(doc.paragraphs):
-            has_image = any(run.element.xpath('.//pic:pic') for run in paragraph.runs)
-            if has_image:
-                paragraph.insert_paragraph_before()
-                self._insert_paragraph_after(paragraph)
-=======
         """
         Corrige problemas de diseño en Word, especialmente solapamiento de imágenes.
         Convierte imágenes flotantes a in-line y asegura flujo vertical.
@@ -677,15 +540,11 @@ class PDFService:
                     shape.height = int(shape.width * ratio)
             except Exception:
                 continue
->>>>>>> main
 
         doc.save(str(docx_path))
 
     def _convert_pdf_to_docx_pdf2docx(self, input_path: Path, output_docx: Path) -> Path:
-<<<<<<< HEAD
-=======
         """Motor principal de conversión usando pdf2docx."""
->>>>>>> main
         from pdf2docx import Converter
 
         output_docx.parent.mkdir(parents=True, exist_ok=True)
@@ -694,17 +553,10 @@ class PDFService:
             cv.convert(str(output_docx), start=0, end=None)
         finally:
             cv.close()
-<<<<<<< HEAD
-        self._fix_images_layout(output_docx)
-        return output_docx
-
-    def is_text_based_pdf(self, input_path: Path) -> bool:
-=======
         return output_docx
 
     def is_text_based_pdf(self, input_path: Path) -> bool:
         """Verifica si un PDF tiene capa de texto extraíble."""
->>>>>>> main
         reader = self._pdf_adapter.reader(input_path)
         for page in reader.pages:
             if (page.extract_text() or "").strip():
@@ -712,15 +564,6 @@ class PDFService:
         return False
 
     def convert_pdf_to_docx(self, input_path: Path, output_docx: Path, mode: str = "advanced") -> Path:
-<<<<<<< HEAD
-        if mode == "quick":
-            return self._convert_pdf_to_docx_quick(input_path, output_docx)
-
-        try:
-            return self._convert_pdf_to_docx_pdf2docx(input_path, output_docx)
-        except Exception:
-            return self._convert_pdf_to_docx_structured_fallback(input_path, output_docx)
-=======
         """
         Orquesta la conversión de PDF a Word eligiendo el motor adecuado.
         :param input_path: PDF de origen.
@@ -752,4 +595,3 @@ class PDFService:
         # docx2pdf puede ser ruidoso, pero es efectivo en Windows con Word
         convert(str(input_path), str(output_pdf))
         return output_pdf
->>>>>>> main

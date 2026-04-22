@@ -12,14 +12,11 @@ from src.utils.helpers import ensure_pdf_extension, human_error
 
 
 class MainWindow(ttk.Frame):
-<<<<<<< HEAD
-=======
     """
     Clase principal de la interfaz gráfica.
     Gestiona la interacción del usuario con los servicios de PDF, archivos y visor.
     """
 
->>>>>>> main
     def __init__(
         self,
         master: tk.Tk,
@@ -27,9 +24,6 @@ class MainWindow(ttk.Frame):
         pdf_service: PDFService,
         viewer_service: ViewerService,
     ) -> None:
-<<<<<<< HEAD
-        super().__init__(master, padding=12)
-=======
         """
         Inicializa la ventana principal y configura los servicios.
         :param master: Ventana raíz de Tkinter.
@@ -38,63 +32,11 @@ class MainWindow(ttk.Frame):
         :param viewer_service: Servicio de visualización.
         """
         super().__init__(master, padding=0)
->>>>>>> main
         self.master = master
         self.file_service = file_service
         self.pdf_service = pdf_service
         self.viewer_service = viewer_service
         self.loaded_files: list[Path] = []
-<<<<<<< HEAD
-        self.status_var = tk.StringVar(value="Listo")
-        self.pdf_info_var = tk.StringVar(value="PDF seleccionado: ninguno")
-
-        self._build_ui()
-
-    def _build_ui(self) -> None:
-        self.pack(fill=tk.BOTH, expand=True)
-
-        btn_row = ttk.Frame(self)
-        btn_row.pack(fill=tk.X, pady=(0, 10))
-
-        create_button(btn_row, "Cargar PDFs", self._load_pdfs).pack(side=tk.LEFT, padx=(0, 6))
-        create_button(btn_row, "Unir", self._merge_pdfs).pack(side=tk.LEFT, padx=6)
-        create_button(btn_row, "Dividir", self._split_pdf).pack(side=tk.LEFT, padx=6)
-        create_button(btn_row, "Extraer contenido", self._extract_content).pack(side=tk.LEFT, padx=6)
-        create_button(btn_row, "Visualizar", self._preview_pdf).pack(side=tk.LEFT, padx=6)
-
-        ttk.Label(self, text="PDFs cargados (el orden de esta lista se usa para unir):").pack(anchor=tk.W)
-
-        list_frame = ttk.Frame(self)
-        list_frame.pack(fill=tk.X, pady=(4, 10))
-
-        self.files_list = tk.Listbox(list_frame, height=8)
-        self.files_list.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.files_list.bind("<<ListboxSelect>>", self._on_file_selection)
-
-        order_controls = ttk.Frame(list_frame)
-        order_controls.pack(side=tk.LEFT, padx=(8, 0), anchor=tk.N)
-        create_button(order_controls, "Subir ↑", self._move_selected_up).pack(fill=tk.X, pady=(0, 6))
-        create_button(order_controls, "Bajar ↓", self._move_selected_down).pack(fill=tk.X)
-
-        ttk.Label(self, textvariable=self.pdf_info_var).pack(anchor=tk.W, pady=(0, 8))
-
-        ttk.Label(self, text="Salida / Texto extraído:").pack(anchor=tk.W)
-        self.output_text = scrolledtext.ScrolledText(self, height=12, wrap=tk.WORD)
-        self.output_text.pack(fill=tk.BOTH, expand=True)
-
-        status_bar = ttk.Label(self, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.pack(fill=tk.X, pady=(10, 0))
-
-    def _set_status(self, message: str) -> None:
-        self.status_var.set(message)
-
-    def _refresh_file_list(self) -> None:
-        self.files_list.delete(0, tk.END)
-        for index, file_path in enumerate(self.loaded_files, start=1):
-            self.files_list.insert(tk.END, f"{index:02d}. {file_path}")
-
-    def _selected_pdf_index(self) -> int | None:
-=======
         self.status_var = tk.StringVar(value="Listo para procesar PDFs")
         self.pdf_info_var = tk.StringVar(value="Selecciona un PDF de la lista")
 
@@ -239,28 +181,12 @@ class MainWindow(ttk.Frame):
 
     def _selected_pdf_index(self) -> int | None:
         """Obtiene el índice del PDF seleccionado en la lista."""
->>>>>>> main
         selected = self.files_list.curselection()
         if not selected:
             return None
         return selected[0]
 
     def _on_file_selection(self, _event=None) -> None:
-<<<<<<< HEAD
-        selected_idx = self._selected_pdf_index()
-        if selected_idx is None:
-            self.pdf_info_var.set("PDF seleccionado: ninguno")
-            return
-
-        input_pdf = self.loaded_files[selected_idx]
-        try:
-            total_pages = self.pdf_service.get_total_pages(input_pdf)
-            self.pdf_info_var.set(f"PDF seleccionado: {input_pdf.name} | Total de páginas: {total_pages}")
-        except Exception as exc:
-            self.pdf_info_var.set(f"No se pudo leer info: {human_error(exc)}")
-
-    def _move_selected_up(self) -> None:
-=======
         """Evento al seleccionar un archivo de la lista."""
         selected_idx = self._selected_pdf_index()
         if selected_idx is None:
@@ -281,7 +207,6 @@ class MainWindow(ttk.Frame):
 
     def _move_selected_up(self) -> None:
         """Sube un nivel el archivo seleccionado en la lista."""
->>>>>>> main
         idx = self._selected_pdf_index()
         if idx is None:
             messagebox.showwarning("Orden", "Selecciona un PDF para mover.")
@@ -293,14 +218,6 @@ class MainWindow(ttk.Frame):
         self._refresh_file_list()
         self.files_list.selection_set(idx - 1)
         self._on_file_selection()
-<<<<<<< HEAD
-        self._set_status("Orden actualizado para unión de PDFs")
-
-    def _move_selected_down(self) -> None:
-        idx = self._selected_pdf_index()
-        if idx is None:
-            messagebox.showwarning("Orden", "Selecciona un PDF para mover.")
-=======
         self._set_status("Orden de unión actualizado")
 
     def _move_selected_down(self) -> None:
@@ -308,7 +225,6 @@ class MainWindow(ttk.Frame):
         idx = self._selected_pdf_index()
         if idx is None:
             messagebox.showwarning("Orden", "Selecciona un archivo para mover.")
->>>>>>> main
             return
         if idx == len(self.loaded_files) - 1:
             return
@@ -317,14 +233,6 @@ class MainWindow(ttk.Frame):
         self._refresh_file_list()
         self.files_list.selection_set(idx + 1)
         self._on_file_selection()
-<<<<<<< HEAD
-        self._set_status("Orden actualizado para unión de PDFs")
-
-    def _load_pdfs(self) -> None:
-        selected = filedialog.askopenfilenames(
-            title="Selecciona uno o más PDFs",
-            filetypes=[("PDF files", "*.pdf")],
-=======
         self._set_status("Orden actualizado")
 
     def _remove_selected_file(self) -> None:
@@ -361,31 +269,11 @@ class MainWindow(ttk.Frame):
         selected = filedialog.askopenfilenames(
             title="Selecciona archivos PDF o Word",
             filetypes=[("Archivos permitidos", "*.pdf *.docx"), ("PDF files", "*.pdf"), ("Word files", "*.docx")],
->>>>>>> main
         )
         if not selected:
             return
 
         try:
-<<<<<<< HEAD
-            files = self.file_service.validate_pdf_inputs(list(selected))
-            self.loaded_files = files
-            self._refresh_file_list()
-            if self.loaded_files:
-                self.files_list.selection_set(0)
-                self._on_file_selection()
-            self._set_status(
-                f"{len(files)} archivo(s) cargado(s). Ajusta el orden con Subir/Bajar antes de unir."
-            )
-        except Exception as exc:
-            messagebox.showerror("Error al cargar archivos", human_error(exc))
-            self._set_status("Error al cargar PDFs")
-
-    def _merge_pdfs(self) -> None:
-        if len(self.loaded_files) < 2:
-            messagebox.showwarning("Unir PDFs", "Carga al menos 2 archivos PDF.")
-            return
-=======
             files = self.file_service.validate_mixed_inputs(list(selected))
             # Añadimos a los archivos ya cargados en lugar de reemplazarlos
             self.loaded_files.extend(files)
@@ -405,7 +293,6 @@ class MainWindow(ttk.Frame):
             messagebox.showwarning("Unir", "Carga al menos 2 archivos PDF para unir.")
             return
         
->>>>>>> main
         target = filedialog.asksaveasfilename(
             title="Guardar PDF unido",
             defaultextension=".pdf",
@@ -416,31 +303,6 @@ class MainWindow(ttk.Frame):
 
         try:
             output = self.file_service.prepare_output_path(str(ensure_pdf_extension(target)))
-<<<<<<< HEAD
-            self.pdf_service.merge_pdfs(self.loaded_files, output)
-            self._set_status(f"PDF unido guardado en: {output}")
-            messagebox.showinfo("Éxito", f"PDF unido guardado en:\n{output}")
-        except Exception as exc:
-            messagebox.showerror("Error al unir PDFs", human_error(exc))
-            self._set_status("Error al unir PDFs")
-
-    def _split_pdf(self) -> None:
-        if not self.loaded_files:
-            messagebox.showwarning("Dividir PDF", "Carga al menos 1 PDF.")
-            return
-
-        selected_idx = self._selected_pdf_index()
-        if selected_idx is None:
-            messagebox.showwarning("Dividir PDF", "Selecciona un PDF de la lista.")
-            return
-
-        input_pdf = self.loaded_files[selected_idx]
-        split_options = self._ask_split_options(input_pdf)
-        if split_options is None:
-            return
-
-        output_dir = filedialog.askdirectory(title="Carpeta de salida para división")
-=======
             self.pdf_service.merge_pdfs(pdf_files, output)
             self._set_status(f"PDF unido guardado exitosamente")
             messagebox.showinfo("Éxito", f"PDF unido generado en:\n{output.name}")
@@ -481,121 +343,11 @@ class MainWindow(ttk.Frame):
             return
 
         output_dir = filedialog.askdirectory(title="Carpeta de salida")
->>>>>>> main
         if not output_dir:
             return
 
         try:
             mode = split_options["mode"]
-<<<<<<< HEAD
-            if mode == "range":
-                created = self.pdf_service.split_pdf(
-                    input_path=input_pdf,
-                    output_dir=Path(output_dir),
-                    start_page=split_options["start_page"],
-                    end_page=split_options["end_page"],
-                )
-            elif mode == "parts":
-                created = self.pdf_service.split_pdf_by_parts(
-                    input_path=input_pdf,
-                    output_dir=Path(output_dir),
-                    num_parts=split_options["num_parts"],
-                )
-            else:
-                created = self.pdf_service.extract_page_ranges(
-                    input_path=input_pdf,
-                    output_dir=Path(output_dir),
-                    ranges_input=str(split_options["ranges_input"]),
-                )
-
-            self._set_status(f"Se generaron {len(created)} archivo(s) en {output_dir}")
-            messagebox.showinfo("Éxito", f"Se generaron {len(created)} archivo(s).")
-        except Exception as exc:
-            messagebox.showerror("Error al dividir PDF", human_error(exc))
-            self._set_status("Error al dividir PDF")
-
-    def _extract_content(self) -> None:
-        if not self.loaded_files:
-            messagebox.showwarning("Extraer contenido", "Carga al menos 1 PDF.")
-            return
-
-        selected_idx = self._selected_pdf_index()
-        if selected_idx is None:
-            messagebox.showwarning("Extraer contenido", "Selecciona un PDF de la lista.")
-            return
-
-        input_pdf = self.loaded_files[selected_idx]
-        mode = self._ask_content_mode()
-        if not mode:
-            return
-
-        try:
-            if mode == "text":
-                text = self.pdf_service.extract_text(input_pdf)
-                self.output_text.delete("1.0", tk.END)
-                self.output_text.insert(tk.END, text or "[No se encontró texto extraíble]")
-                self._set_status(f"Texto extraído de: {input_pdf.name}")
-
-                output_file = filedialog.asksaveasfilename(
-                    title="Guardar texto",
-                    defaultextension=".txt",
-                    initialfile=f"{input_pdf.stem}_texto.txt",
-                    filetypes=[("Text files", "*.txt")],
-                )
-                if output_file:
-                    Path(output_file).write_text(text, encoding="utf-8")
-                    self._set_status(f"Texto guardado en: {output_file}")
-
-            elif mode == "text_images":
-                output_dir = filedialog.askdirectory(title="Carpeta de salida para texto e imágenes")
-                if not output_dir:
-                    return
-                content_dir = Path(output_dir) / f"{input_pdf.stem}_contenido"
-                result = self.pdf_service.extract_text_and_images(input_pdf, content_dir)
-
-                text_content = Path(result["text_file"]).read_text(encoding="utf-8")
-                self.output_text.delete("1.0", tk.END)
-                self.output_text.insert(tk.END, text_content or "[No se encontró texto extraíble]")
-                self._set_status(
-                    f"Contenido extraído: texto + {result['image_count']} imagen(es) en {content_dir}"
-                )
-                messagebox.showinfo(
-                    "Extracción completada",
-                    f"Texto: {result['text_file']}\nImágenes: {result['images_dir']}\nTotal imágenes: {result['image_count']}",
-                )
-
-            elif mode in {"word_quick", "word_advanced"}:
-                output_docx = filedialog.asksaveasfilename(
-                    title="Guardar Word",
-                    defaultextension=".docx",
-                    initialfile=f"{input_pdf.stem}.docx",
-                    filetypes=[("Word files", "*.docx")],
-                )
-                if not output_docx:
-                    return
-                conversion_mode = "advanced" if mode == "word_advanced" else "quick"
-                if conversion_mode == "advanced" and not self.pdf_service.is_text_based_pdf(input_pdf):
-                    messagebox.showinfo(
-                        "PDF posiblemente escaneado",
-                        "Este PDF parece no tener capa de texto. La conversión avanzada puede requerir OCR para mejores resultados.",
-                    )
-                output_path = self.pdf_service.convert_pdf_to_docx(
-                    input_pdf, Path(output_docx), mode=conversion_mode
-                )
-                self._set_status(f"Documento Word generado en: {output_path}")
-                messagebox.showinfo("Conversión completada", f"Archivo generado:\n{output_path}")
-
-        except RuntimeError as exc:
-            messagebox.showwarning("Dependencia faltante", str(exc))
-            self._set_status("Falta dependencia para extracción de imágenes")
-        except Exception as exc:
-            messagebox.showerror("Error en extracción/conversión", human_error(exc))
-            self._set_status("Error en extracción/conversión")
-
-    def _ask_content_mode(self) -> str | None:
-        dialog = tk.Toplevel(self)
-        dialog.title("Extraer contenido / Convertir")
-=======
             files_to_process = pdf_files if all_files else [self.loaded_files[selected_idx]]
             total_created = 0
 
@@ -812,47 +564,10 @@ class MainWindow(ttk.Frame):
         """Muestra el diálogo para elegir el modo de extracción/conversión."""
         dialog = tk.Toplevel(self)
         dialog.title("Configurar Extracción")
->>>>>>> main
         dialog.grab_set()
         dialog.resizable(False, False)
 
         mode_var = tk.StringVar(value="text")
-<<<<<<< HEAD
-        result: dict[str, str] = {}
-
-        ttk.Label(dialog, text="Elige una acción:").grid(row=0, column=0, padx=10, pady=(10, 6), sticky=tk.W)
-        ttk.Radiobutton(dialog, text="Extraer solo texto (.txt)", variable=mode_var, value="text").grid(
-            row=1, column=0, padx=10, sticky=tk.W
-        )
-        ttk.Radiobutton(dialog, text="Extraer texto + imágenes", variable=mode_var, value="text_images").grid(
-            row=2, column=0, padx=10, sticky=tk.W
-        )
-        ttk.Radiobutton(dialog, text="Conversión rápida", variable=mode_var, value="word_quick").grid(
-            row=3, column=0, padx=10, sticky=tk.W
-        )
-        ttk.Radiobutton(dialog, text="Conversión avanzada (recomendada)", variable=mode_var, value="word_advanced").grid(
-            row=4, column=0, padx=10, sticky=tk.W
-        )
-
-        def confirm() -> None:
-            result["mode"] = mode_var.get()
-            dialog.destroy()
-
-        ttk.Button(dialog, text="Aceptar", command=confirm).grid(row=5, column=0, padx=10, pady=10, sticky=tk.W)
-        ttk.Button(dialog, text="Cancelar", command=dialog.destroy).grid(row=5, column=0, padx=10, pady=10, sticky=tk.E)
-
-        dialog.wait_window()
-        return result.get("mode")
-
-    def _preview_pdf(self) -> None:
-        if not self.loaded_files:
-            messagebox.showwarning("Visualizar PDF", "Carga al menos 1 PDF.")
-            return
-
-        selected_idx = self._selected_pdf_index()
-        if selected_idx is None:
-            messagebox.showwarning("Visualizar PDF", "Selecciona un PDF de la lista.")
-=======
         all_files_var = tk.BooleanVar(value=False)
         result: dict[str, str | bool] = {}
 
@@ -894,24 +609,11 @@ class MainWindow(ttk.Frame):
         selected_idx = self._selected_pdf_index()
         if selected_idx is None:
             messagebox.showwarning("Visualizar", "Selecciona un PDF de la lista.")
->>>>>>> main
             return
 
         input_pdf = self.loaded_files[selected_idx]
         try:
             self.viewer_service.open_pdf(input_pdf)
-<<<<<<< HEAD
-            self._set_status(f"Abriendo visor para: {input_pdf.name}")
-        except Exception as exc:
-            messagebox.showerror("Error al visualizar PDF", human_error(exc))
-            self._set_status("Error al visualizar PDF")
-
-    def _ask_split_options(self, input_pdf: Path) -> dict[str, int | str | None] | None:
-        total_pages = self.pdf_service.get_total_pages(input_pdf)
-
-        dialog = tk.Toplevel(self)
-        dialog.title("Opciones de división")
-=======
             self._set_status(f"Visualizando {input_pdf.name}")
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
@@ -921,113 +623,10 @@ class MainWindow(ttk.Frame):
         total_pages = self.pdf_service.get_total_pages(input_pdf)
         dialog = tk.Toplevel(self)
         dialog.title("✂️ Configurar División")
->>>>>>> main
         dialog.grab_set()
         dialog.resizable(False, False)
 
         mode_var = tk.StringVar(value="range")
-<<<<<<< HEAD
-        result: dict[str, int | str | None] = {}
-
-        ttk.Label(
-            dialog,
-            text=f"PDF: {input_pdf.name} | Total de páginas: {total_pages}",
-        ).grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 8), sticky=tk.W)
-
-        ttk.Radiobutton(dialog, text="Dividir por rango", variable=mode_var, value="range", command=lambda: update_mode_fields(mode_var.get())).grid(
-            row=1, column=0, columnspan=2, padx=10, sticky=tk.W
-        )
-        ttk.Label(dialog, text="Inicio (vacío = 1):").grid(row=2, column=0, padx=10, pady=4, sticky=tk.W)
-        start_entry = ttk.Entry(dialog)
-        start_entry.grid(row=2, column=1, padx=10, pady=4)
-
-        ttk.Label(dialog, text="Fin (vacío = última):").grid(row=3, column=0, padx=10, pady=4, sticky=tk.W)
-        end_entry = ttk.Entry(dialog)
-        end_entry.grid(row=3, column=1, padx=10, pady=4)
-
-        ttk.Separator(dialog, orient=tk.HORIZONTAL).grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=8)
-
-        ttk.Radiobutton(dialog, text="Dividir por número de partes", variable=mode_var, value="parts", command=lambda: update_mode_fields(mode_var.get())).grid(
-            row=5, column=0, columnspan=2, padx=10, sticky=tk.W
-        )
-        ttk.Label(dialog, text=f"Partes (1 a {total_pages}):").grid(
-            row=6, column=0, padx=10, pady=4, sticky=tk.W
-        )
-        parts_entry = ttk.Entry(dialog)
-        parts_entry.grid(row=6, column=1, padx=10, pady=4)
-
-        ttk.Separator(dialog, orient=tk.HORIZONTAL).grid(row=7, column=0, columnspan=2, sticky="ew", padx=10, pady=8)
-
-        ttk.Radiobutton(dialog, text="Extraer rangos", variable=mode_var, value="extract_ranges", command=lambda: update_mode_fields(mode_var.get())).grid(
-            row=8, column=0, columnspan=2, padx=10, sticky=tk.W
-        )
-        ttk.Label(dialog, text="Rangos (ej: 2-14, 16-18, 20-29):").grid(
-            row=9, column=0, padx=10, pady=4, sticky=tk.W
-        )
-        ranges_entry = ttk.Entry(dialog)
-        ranges_entry.grid(row=9, column=1, padx=10, pady=4)
-
-        def set_entry_state(entry: ttk.Entry, enabled: bool) -> None:
-            state = "normal" if enabled else "disabled"
-            entry.configure(state=state)
-
-        def clear_entry(entry: ttk.Entry) -> None:
-            entry.configure(state="normal")
-            entry.delete(0, tk.END)
-
-        def update_mode_fields(mode: str) -> None:
-            is_range = mode == "range"
-            is_parts = mode == "parts"
-            is_extract = mode == "extract_ranges"
-
-            set_entry_state(start_entry, is_range)
-            set_entry_state(end_entry, is_range)
-            set_entry_state(parts_entry, is_parts)
-            set_entry_state(ranges_entry, is_extract)
-
-            if not is_range:
-                clear_entry(start_entry)
-                clear_entry(end_entry)
-                set_entry_state(start_entry, False)
-                set_entry_state(end_entry, False)
-            if not is_parts:
-                clear_entry(parts_entry)
-                set_entry_state(parts_entry, False)
-            if not is_extract:
-                clear_entry(ranges_entry)
-                set_entry_state(ranges_entry, False)
-
-        update_mode_fields(mode_var.get())
-
-        def confirm() -> None:
-            try:
-                if mode_var.get() == "range":
-                    start_raw = start_entry.get().strip()
-                    end_raw = end_entry.get().strip()
-                    start = int(start_raw) if start_raw else None
-                    end = int(end_raw) if end_raw else None
-                    result.update({"mode": "range", "start_page": start, "end_page": end})
-                elif mode_var.get() == "parts":
-                    parts_raw = parts_entry.get().strip()
-                    if not parts_raw:
-                        raise ValueError("Debes indicar el número de partes.")
-                    num_parts = int(parts_raw)
-                    if num_parts < 1 or num_parts > total_pages:
-                        raise ValueError(f"El número de partes debe estar entre 1 y {total_pages}.")
-                    result.update({"mode": "parts", "num_parts": num_parts})
-                else:
-                    ranges_input = ranges_entry.get().strip()
-                    if not ranges_input:
-                        raise ValueError("Debes ingresar al menos un rango para extraer.")
-                    result.update({"mode": "extract_ranges", "ranges_input": ranges_input})
-
-                dialog.destroy()
-            except ValueError as exc:
-                messagebox.showwarning("Datos inválidos", str(exc))
-
-        ttk.Button(dialog, text="Aceptar", command=confirm).grid(row=10, column=0, padx=10, pady=10)
-        ttk.Button(dialog, text="Cancelar", command=dialog.destroy).grid(row=10, column=1, padx=10, pady=10)
-=======
         all_files_var = tk.BooleanVar(value=False)
         result: dict[str, int | str | bool | None] = {}
 
@@ -1121,7 +720,6 @@ class MainWindow(ttk.Frame):
         btn_f.pack(fill=tk.X)
         create_button(btn_f, "✅ Aceptar", confirm, style="Primary.TButton").pack(side=tk.RIGHT, padx=5)
         create_button(btn_f, "❌ Cancelar", dialog.destroy).pack(side=tk.RIGHT)
->>>>>>> main
 
         dialog.wait_window()
         return result or None
