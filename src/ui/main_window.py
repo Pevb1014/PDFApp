@@ -9,6 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from docx import Document
 from src.services.file_service import FileService
 from src.services.pdf_service import PDFService
 from src.services.viewer_service import ViewerService
@@ -137,12 +138,11 @@ class MainWindow(ttk.Frame):
         # Fila 1: Gestión y Operaciones PDF
         row1 = ttk.Frame(actions_frame)
         row1.pack(fill=tk.X, pady=(0, 5))
-        row1.columnconfigure((0, 1, 2, 3), weight=1)
+        row1.columnconfigure((0, 1, 2), weight=1)
         
         create_button(row1, "📥 Cargar Archivos", self._load_files, style="Primary.TButton").grid(row=0, column=0, sticky="ew", padx=5)
-        create_button(row1, "👁️ Visualizar", self._preview_pdf).grid(row=0, column=1, sticky="ew", padx=5)
-        create_button(row1, "🔗 Unir", self._merge_pdfs, style="Accent.TButton").grid(row=0, column=2, sticky="ew", padx=5)
-        create_button(row1, "✂️ Dividir", self._split_pdf).grid(row=0, column=3, sticky="ew", padx=5)
+        create_button(row1, "🔗 Unir", self._merge_pdfs, style="Accent.TButton").grid(row=0, column=1, sticky="ew", padx=5)
+        create_button(row1, "✂️ Dividir", self._split_pdf).grid(row=0, column=2, sticky="ew", padx=5)
 
         # Fila 2: Conversiones
         row2 = ttk.Frame(actions_frame)
@@ -184,6 +184,7 @@ class MainWindow(ttk.Frame):
         self.preview_title_var = tk.StringVar(value="Selecciona un PDF y pulsa Visualizar.")
         ttk.Label(preview_toolbar, textvariable=self.preview_title_var).pack(side=tk.LEFT)
         create_button(preview_toolbar, "✍️ Editar este PDF", self._edit_previewed_pdf, style="Accent.TButton").pack(side=tk.RIGHT)
+        create_button(preview_toolbar, "❎ Cerrar vista", self._clear_preview).pack(side=tk.RIGHT, padx=(0, 6))
 
         viewer_container = ttk.Frame(preview_tab)
         viewer_container.grid(row=1, column=0, sticky="nsew")
@@ -231,6 +232,7 @@ class MainWindow(ttk.Frame):
         input_file = self.loaded_files[selected_idx]
         if input_file.suffix.lower() == ".docx":
             self.pdf_info_var.set(f"📌 Word: {input_file.name}")
+            self._preview_selected_file(input_file)
             return
 
         try:
@@ -239,6 +241,8 @@ class MainWindow(ttk.Frame):
         except Exception:
             # Manejar PdfStreamError u otros errores de lectura de metadatos de forma silenciosa
             self.pdf_info_var.set(f"📌 PDF: {input_file.name} | 📖 (Info no disponible)")
+        finally:
+            self._preview_selected_file(input_file)
 
     def _move_selected_up(self) -> None:
         """Sube un nivel el archivo seleccionado en la lista."""
@@ -639,24 +643,19 @@ class MainWindow(ttk.Frame):
         dialog.wait_window()
         return result if result else None
 
-    def _preview_pdf(self) -> None:
-        """Visualiza el PDF seleccionado dentro de una pestaña integrada de la app."""
-        selected_idx = self._selected_pdf_index()
-        if selected_idx is None:
-            messagebox.showwarning("Visualizar", "Selecciona un PDF de la lista.")
-            return
-
-        input_pdf = self.loaded_files[selected_idx]
-        if input_pdf.suffix.lower() != ".pdf":
-            messagebox.showwarning("Visualizar", "La visualización integrada solo está disponible para archivos PDF.")
-            return
+    def _preview_selected_file(self, input_file: Path) -> None:
+        """Visualiza automáticamente el archivo seleccionado en la pestaña integrada."""
+        self.workspace_notebook.select(1)
         try:
-            self._render_pdf_in_app_viewer(input_pdf)
-            self.workspace_notebook.select(1)
-            self._set_status(f"Visualizando {input_pdf.name} en pestaña integrada")
+            if input_file.suffix.lower() == ".pdf":
+                self._render_pdf_in_app_viewer(input_file)
+                self._set_status(f"Visualizando {input_file.name} en pestaña integrada")
+            else:
+                self._render_word_in_app_viewer(input_file)
+                self._set_status(f"Visualizando {input_file.name} en pestaña integrada")
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
-            self._set_status("Error al visualizar PDF")
+            self._set_status("Error al visualizar archivo")
 
     def _render_pdf_in_app_viewer(self, input_pdf: Path) -> None:
         self.preview_canvas.delete("all")
@@ -690,6 +689,34 @@ class MainWindow(ttk.Frame):
         self.preview_canvas.configure(scrollregion=(0, 0, max_width + 32, y_offset))
         self.preview_canvas.yview_moveto(0)
 
+    def _render_word_in_app_viewer(self, input_docx: Path) -> None:
+        self.preview_canvas.delete("all")
+        self.preview_images = []
+        self.preview_current_pdf = None
+        self.preview_title_var.set(f"Vista integrada: {input_docx.name} (Word)")
+
+        doc = Document(str(input_docx))
+        lines: list[str] = [f"Documento Word: {input_docx.name}", ""]
+        for paragraph in doc.paragraphs:
+            text = paragraph.text.strip()
+            if text:
+                lines.append(text)
+        if len(lines) <= 2:
+            lines.append("[Documento sin texto visible]")
+
+        viewer_text = "\n".join(lines)
+        self.preview_canvas.create_text(
+            16,
+            16,
+            anchor=tk.NW,
+            text=viewer_text,
+            font=("Consolas", 10),
+            fill="#202124",
+            width=max(self.preview_canvas.winfo_width() - 32, 760),
+        )
+        self.preview_canvas.configure(scrollregion=self.preview_canvas.bbox("all"))
+        self.preview_canvas.yview_moveto(0)
+
     def _on_preview_mousewheel(self, event) -> None:
         if getattr(event, "num", None) == 4:
             self.preview_canvas.yview_scroll(-3, "units")
@@ -701,7 +728,7 @@ class MainWindow(ttk.Frame):
 
     def _edit_previewed_pdf(self) -> None:
         if self.preview_current_pdf is None:
-            messagebox.showwarning("Editar PDF", "Primero visualiza un PDF en la pestaña integrada.")
+            messagebox.showwarning("Editar PDF", "Selecciona y visualiza un PDF para editar.")
             return
         try:
             subprocess.Popen([sys.executable, "-m", "src.ui.pdf_editor_app", str(self.preview_current_pdf)])
@@ -709,6 +736,14 @@ class MainWindow(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
             self._set_status("Error al abrir editor PDF")
+
+    def _clear_preview(self) -> None:
+        self.preview_canvas.delete("all")
+        self.preview_images = []
+        self.preview_current_pdf = None
+        self.preview_title_var.set("Visualización cerrada. Selecciona un archivo de la lista para visualizar.")
+        self.workspace_notebook.select(0)
+        self._set_status("Visualización cerrada")
 
     def _edit_pdf(self) -> None:
         """Abre el editor de PDF avanzado (PyQt6) para edición por superposiciones."""
