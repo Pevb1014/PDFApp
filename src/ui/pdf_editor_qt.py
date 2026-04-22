@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QByteArray, QPointF, QRectF, Qt
+from PyQt6.QtCore import QBuffer, QByteArray, QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QColorDialog,
@@ -77,6 +77,16 @@ class DrawSignatureDialog(QDialog):
         self._image.save(buffer, "PNG")
         buffer.close()
         return bytes(ba)
+
+
+class InlineTextEdit(QTextEdit):
+    """Editor inline que notifica al perder foco sin tocar objetos eliminados."""
+
+    editing_finished = pyqtSignal()
+
+    def focusOutEvent(self, event):  # type: ignore[override]
+        self.editing_finished.emit()
+        super().focusOutEvent(event)
 
 
 class PDFEditorWindow(QMainWindow):
@@ -227,19 +237,24 @@ class PDFEditorWindow(QMainWindow):
         rect.setPen(QPen(QColor("red"), 2))
         self.scene.addItem(rect)
 
-        editor = QTextEdit()
+        editor = InlineTextEdit()
         editor.setText(t)
         editor.setGeometry(0, 0, int((x1 - x0) * self.zoom), int((y1 - y0) * self.zoom))
         proxy = self.scene.addWidget(editor)
         proxy.setPos(QPointF(x0 * self.zoom, y0 * self.zoom))
 
+        committed = {"done": False}
+
         def commit():
+            if committed["done"]:
+                return
+            committed["done"] = True
             new_text = editor.toPlainText().strip()
             if new_text:
                 self.service.add_text_edit_overlay(self.page_index, (x0, y0, x1, y1), new_text, self._style())
             self._render_page()
 
-        editor.focusOutEvent = lambda ev: (commit(), QTextEdit.focusOutEvent(editor, ev))  # type: ignore[assignment]
+        editor.editing_finished.connect(commit)
         editor.setFocus()
 
     def _add_signature_overlay(self, x: float, y: float) -> None:
