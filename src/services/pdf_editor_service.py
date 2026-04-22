@@ -31,14 +31,22 @@ class PDFEditorService:
     def add_overlay(self, overlay: OverlayItem) -> None:
         self._overlays.append(overlay)
 
+    def update_overlay_rect(self, overlay_uid: str, rect: tuple[float, float, float, float]) -> None:
+        for idx, item in enumerate(self._overlays):
+            if item.uid == overlay_uid:
+                self._overlays[idx].rect = rect
+                return
+
     def add_text_overlay(
         self,
         page_index: int,
         rect: tuple[float, float, float, float],
         text: str,
         style: OverlayStyle,
-    ) -> None:
-        self.add_overlay(OverlayItem(kind="text_add", page_index=page_index, rect=rect, text=text, style=style))
+    ) -> OverlayItem:
+        overlay = OverlayItem(kind="text_add", page_index=page_index, rect=rect, text=text, style=style)
+        self.add_overlay(overlay)
+        return overlay
 
     def add_text_edit_overlay(
         self,
@@ -46,8 +54,10 @@ class PDFEditorService:
         rect: tuple[float, float, float, float],
         text: str,
         style: OverlayStyle,
-    ) -> None:
-        self.add_overlay(OverlayItem(kind="text_edit", page_index=page_index, rect=rect, text=text, style=style))
+    ) -> OverlayItem:
+        overlay = OverlayItem(kind="text_edit", page_index=page_index, rect=rect, text=text, style=style)
+        self.add_overlay(overlay)
+        return overlay
 
     def add_signature_text_overlay(
         self,
@@ -55,8 +65,10 @@ class PDFEditorService:
         rect: tuple[float, float, float, float],
         text: str,
         style: OverlayStyle,
-    ) -> None:
-        self.add_overlay(OverlayItem(kind="signature_text", page_index=page_index, rect=rect, text=text, style=style))
+    ) -> OverlayItem:
+        overlay = OverlayItem(kind="signature_text", page_index=page_index, rect=rect, text=text, style=style)
+        self.add_overlay(overlay)
+        return overlay
 
     def add_signature_image_overlay(
         self,
@@ -64,32 +76,32 @@ class PDFEditorService:
         rect: tuple[float, float, float, float],
         image_bytes: bytes,
         image_ext: str = "png",
-    ) -> None:
-        self.add_overlay(
-            OverlayItem(
+    ) -> OverlayItem:
+        overlay = OverlayItem(
                 kind="signature_image",
                 page_index=page_index,
                 rect=rect,
                 image_bytes=image_bytes,
                 image_ext=image_ext,
-            )
         )
+        self.add_overlay(overlay)
+        return overlay
 
     def add_signature_draw_overlay(
         self,
         page_index: int,
         rect: tuple[float, float, float, float],
         image_bytes: bytes,
-    ) -> None:
-        self.add_overlay(
-            OverlayItem(
+    ) -> OverlayItem:
+        overlay = OverlayItem(
                 kind="signature_draw",
                 page_index=page_index,
                 rect=rect,
                 image_bytes=image_bytes,
                 image_ext="png",
-            )
         )
+        self.add_overlay(overlay)
+        return overlay
 
     def export(self, input_pdf: Path, output_pdf: Path) -> Path:
         return self._adapter.export_with_overlays(input_pdf, output_pdf, self._overlays)

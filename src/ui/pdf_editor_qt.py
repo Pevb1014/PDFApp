@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QByteArray, QPoint, QPointF, QRectF, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QBuffer, QByteArray, QPoint, Qt
 from PyQt6.QtGui import QAction, QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QColorDialog,
@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFontComboBox,
     QGraphicsPixmapItem,
-    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsTextItem,
     QGraphicsView,
@@ -21,13 +20,12 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSpinBox,
-    QTextEdit,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
-from src.core.editor_models import OverlayStyle
+from src.core.editor_models import OverlayItem, OverlayStyle
 from src.services.pdf_editor_service import PDFEditorService
 
 
@@ -86,24 +84,48 @@ class SignatureCanvas(QWidget):
         painter.drawImage(0, 0, self.image)
 
 
-class InlineTextEdit(QTextEdit):
-    """Editor inline que notifica al perder foco sin tocar objetos eliminados."""
+class OverlayTextItem(QGraphicsTextItem):
+    def __init__(self, overlay: OverlayItem, zoom: float, on_move) -> None:
+        super().__init__(overlay.text)
+        self.overlay = overlay
+        self.zoom = zoom
+        self.on_move = on_move
+        self.setTextWidth((overlay.rect[2] - overlay.rect[0]) * zoom)
+        self.setPos(overlay.rect[0] * zoom, overlay.rect[1] * zoom)
+        self.setDefaultTextColor(QColor.fromRgbF(*overlay.style.color_rgb))
+        self.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsSelectable, True)
 
-    editing_finished = pyqtSignal()
-    submit_requested = pyqtSignal()
+    def mouseReleaseEvent(self, event):  # type: ignore[override]
+        super().mouseReleaseEvent(event)
+        x = self.pos().x() / self.zoom
+        y = self.pos().y() / self.zoom
+        w = (self.overlay.rect[2] - self.overlay.rect[0])
+        h = (self.overlay.rect[3] - self.overlay.rect[1])
+        self.on_move(self.overlay.uid, (x, y, x + w, y + h))
 
-    def focusOutEvent(self, event):  # type: ignore[override]
-        super().focusOutEvent(event)
-        # Evita reentrancia/destrucción durante el propio focusOut.
-        QTimer.singleShot(0, self.editing_finished.emit)
 
-    def keyPressEvent(self, event):  # type: ignore[override]
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and (
-            event.modifiers() & Qt.KeyboardModifier.ControlModifier
-        ):
-            self.submit_requested.emit()
-            return
-        super().keyPressEvent(event)
+class OverlayImageItem(QGraphicsPixmapItem):
+    def __init__(self, overlay: OverlayItem, zoom: float, on_move) -> None:
+        pix = QPixmap()
+        pix.loadFromData(overlay.image_bytes or b"", "PNG")
+        w = int((overlay.rect[2] - overlay.rect[0]) * zoom)
+        h = int((overlay.rect[3] - overlay.rect[1]) * zoom)
+        super().__init__(pix.scaled(w, h))
+        self.overlay = overlay
+        self.zoom = zoom
+        self.on_move = on_move
+        self.setPos(overlay.rect[0] * zoom, overlay.rect[1] * zoom)
+        self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsSelectable, True)
+
+    def mouseReleaseEvent(self, event):  # type: ignore[override]
+        super().mouseReleaseEvent(event)
+        x = self.pos().x() / self.zoom
+        y = self.pos().y() / self.zoom
+        w = (self.overlay.rect[2] - self.overlay.rect[0])
+        h = (self.overlay.rect[3] - self.overlay.rect[1])
+        self.on_move(self.overlay.uid, (x, y, x + w, y + h))
 
 
 class PDFEditorWindow(QMainWindow):
@@ -113,14 +135,12 @@ class PDFEditorWindow(QMainWindow):
         self.service = PDFEditorService()
         self.page_index = 0
         self.zoom = 1.2
-        self.mode = "text_edit"
+        self.mode = "text_add"
         self.current_color = QColor("black")
         self.mode_map = {
-            "Editar texto existente": "text_edit",
             "Agregar texto nuevo": "text_add",
             "Firmar documento": "sign",
         }
-        self._active_commit = None
 
         self.setWindowTitle(f"PDF Editor - {pdf_path.name}")
         self.resize(1300, 820)
@@ -181,8 +201,7 @@ class PDFEditorWindow(QMainWindow):
         bar.addAction(export)
 
     def _set_mode_from_label(self, label: str) -> None:
-        self._commit_active_editor()
-        self.mode = self.mode_map.get(label, "text_edit")
+        self.mode = self.mode_map.get(label, "text_add")
 
     def _set_mode(self, mode: str) -> None:
         self.mode = mode
@@ -193,17 +212,14 @@ class PDFEditorWindow(QMainWindow):
             self.current_color = chosen
 
     def _change_zoom(self, delta: float) -> None:
-        self._commit_active_editor()
         self.zoom = max(0.4, min(3.0, self.zoom + delta))
         self._render_page()
 
     def _prev_page(self) -> None:
-        self._commit_active_editor()
         self.page_index = max(0, self.page_index - 1)
         self._render_page()
 
     def _next_page(self) -> None:
-        self._commit_active_editor()
         total = self.service.page_count(self.pdf_path)
         self.page_index = min(total - 1, self.page_index + 1)
         self._render_page()
@@ -217,21 +233,12 @@ class PDFEditorWindow(QMainWindow):
         )
 
     def _render_page(self) -> None:
-        self._active_commit = None
         self.scene.clear()
         png = self.service.render_page(self.pdf_path, self.page_index, self.zoom)
         pix = QPixmap()
         pix.loadFromData(png, "PNG")
         self.page_item = QGraphicsPixmapItem(pix)
         self.scene.addItem(self.page_item)
-
-        if self.mode == "text_edit":
-            for x0, y0, x1, y1, _ in self.service.get_text_blocks(self.pdf_path, self.page_index):
-                rect = QGraphicsRectItem(
-                    QRectF(x0 * self.zoom, y0 * self.zoom, (x1 - x0) * self.zoom, (y1 - y0) * self.zoom)
-                )
-                rect.setPen(QPen(QColor(50, 130, 255, 120), 1))
-                self.scene.addItem(rect)
 
         self._render_overlays()
 
@@ -240,25 +247,17 @@ class PDFEditorWindow(QMainWindow):
             if overlay.page_index != self.page_index:
                 continue
             if overlay.kind in {"text_add", "text_edit", "signature_text"}:
-                self._draw_overlay_text(overlay.rect, overlay.text, color=QColor.fromRgbF(*overlay.style.color_rgb))
+                self._draw_overlay_text(overlay)
             elif overlay.kind in {"signature_image", "signature_draw"} and overlay.image_bytes:
-                self._draw_overlay_image(overlay.rect, overlay.image_bytes)
-
-    def _commit_active_editor(self) -> None:
-        if callable(self._active_commit):
-            self._active_commit()
-            self._active_commit = None
+                self._draw_overlay_image(overlay)
 
     def _on_view_click(self, event):  # type: ignore[override]
-        self._commit_active_editor()
         pos = self.view.mapToScene(event.pos())
         x_pdf = pos.x() / self.zoom
         y_pdf = pos.y() / self.zoom
 
         if self.mode == "text_add":
             self._add_text_overlay(x_pdf, y_pdf)
-        elif self.mode == "text_edit":
-            self._edit_text_block(x_pdf, y_pdf)
         else:
             self._add_signature_overlay(x_pdf, y_pdf)
 
@@ -267,46 +266,8 @@ class PDFEditorWindow(QMainWindow):
         if not ok or not text.strip():
             return
         rect = (x, y, x + 280, y + 80)
-        self.service.add_text_overlay(self.page_index, rect, text, self._style())
-        self._draw_overlay_text(rect, text)
-
-    def _edit_text_block(self, x: float, y: float) -> None:
-        self._commit_active_editor()
-        blocks = self.service.get_text_blocks(self.pdf_path, self.page_index)
-        target = None
-        for x0, y0, x1, y1, t in blocks:
-            if (x0 - 8) <= x <= (x1 + 8) and (y0 - 8) <= y <= (y1 + 8):
-                target = (x0, y0, x1, y1, t)
-                break
-        if target is None:
-            return
-
-        x0, y0, x1, y1, t = target
-        rect = QGraphicsRectItem(QRectF(x0 * self.zoom, y0 * self.zoom, (x1 - x0) * self.zoom, (y1 - y0) * self.zoom))
-        rect.setPen(QPen(QColor("red"), 2))
-        self.scene.addItem(rect)
-
-        editor = InlineTextEdit()
-        editor.setText(t)
-        editor.setGeometry(0, 0, int((x1 - x0) * self.zoom), int((y1 - y0) * self.zoom))
-        proxy = self.scene.addWidget(editor)
-        proxy.setPos(QPointF(x0 * self.zoom, y0 * self.zoom))
-
-        committed = {"done": False}
-
-        def commit():
-            if committed["done"]:
-                return
-            committed["done"] = True
-            new_text = editor.toPlainText().strip()
-            if new_text:
-                self.service.add_text_edit_overlay(self.page_index, (x0, y0, x1, y1), new_text, self._style())
-            self._render_page()
-
-        editor.editing_finished.connect(commit)
-        editor.submit_requested.connect(commit)
-        self._active_commit = commit
-        editor.setFocus()
+        overlay = self.service.add_text_overlay(self.page_index, rect, text, self._style())
+        self._draw_overlay_text(overlay)
 
     def _add_signature_overlay(self, x: float, y: float) -> None:
         sig_type, ok = QInputDialog.getItem(
@@ -325,44 +286,29 @@ class PDFEditorWindow(QMainWindow):
             txt, ok2 = QInputDialog.getText(self, "Firma texto", "Texto firma:")
             if ok2 and txt.strip():
                 self.service.add_signature_text_overlay(self.page_index, rect, txt, self._style())
-                self._draw_overlay_text(rect, txt)
+                self._render_page()
         elif sig_type == "Imagen PNG":
             file_path, _ = QFileDialog.getOpenFileName(self, "Selecciona firma", "", "PNG (*.png)")
             if file_path:
                 image_bytes = Path(file_path).read_bytes()
                 self.service.add_signature_image_overlay(self.page_index, rect, image_bytes, image_ext="png")
-                self._draw_overlay_image(rect, image_bytes)
+                self._render_page()
         else:
             dlg = DrawSignatureDialog(self)
             if dlg.exec():
                 image_bytes = dlg.signature_png()
                 self.service.add_signature_draw_overlay(self.page_index, rect, image_bytes)
-                self._draw_overlay_image(rect, image_bytes)
+                self._render_page()
 
-    def _draw_overlay_text(
-        self, rect: tuple[float, float, float, float], text: str, color: QColor | None = None
-    ) -> None:
-        x0, y0, x1, y1 = rect
-        item = QGraphicsTextItem(text)
-        item.setDefaultTextColor(color or self.current_color)
-        item.setPos(x0 * self.zoom, y0 * self.zoom)
-        item.setTextWidth((x1 - x0) * self.zoom)
-        item.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsMovable, True)
-        item.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsSelectable, True)
+    def _draw_overlay_text(self, overlay: OverlayItem) -> None:
+        item = OverlayTextItem(overlay=overlay, zoom=self.zoom, on_move=self.service.update_overlay_rect)
         self.scene.addItem(item)
 
-    def _draw_overlay_image(self, rect: tuple[float, float, float, float], image_bytes: bytes) -> None:
-        x0, y0, x1, y1 = rect
-        pix = QPixmap()
-        pix.loadFromData(image_bytes, "PNG")
-        item = QGraphicsPixmapItem(pix.scaled(int((x1 - x0) * self.zoom), int((y1 - y0) * self.zoom)))
-        item.setPos(x0 * self.zoom, y0 * self.zoom)
-        item.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsMovable, True)
-        item.setFlag(QGraphicsPixmapItem.GraphicsItemFlag.ItemIsSelectable, True)
+    def _draw_overlay_image(self, overlay: OverlayItem) -> None:
+        item = OverlayImageItem(overlay=overlay, zoom=self.zoom, on_move=self.service.update_overlay_rect)
         self.scene.addItem(item)
 
     def _export_pdf(self) -> None:
-        self._commit_active_editor()
         out_path, _ = QFileDialog.getSaveFileName(self, "Exportar PDF", str(self.pdf_path.with_name("editado.pdf")), "PDF (*.pdf)")
         if not out_path:
             return

@@ -38,3 +38,16 @@ def test_editor_service_detects_blocks_and_exports_overlay(tmp_path: Path) -> No
     text = exported[0].get_text()
     exported.close()
     assert "Overlay texto" in text
+
+
+def test_editor_service_updates_overlay_rect() -> None:
+    service = PDFEditorService()
+    overlay = service.add_text_overlay(
+        page_index=0,
+        rect=(10, 10, 100, 40),
+        text="Mover",
+        style=OverlayStyle(),
+    )
+    service.update_overlay_rect(overlay.uid, (20, 30, 110, 60))
+    updated = service.list_overlays()[0]
+    assert updated.rect == (20, 30, 110, 60)

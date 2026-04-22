@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from uuid import uuid4
 from typing import Literal
 
 
@@ -25,6 +26,7 @@ class OverlayItem:
     kind: OverlayKind
     page_index: int
     rect: tuple[float, float, float, float]
+    uid: str = field(default_factory=lambda: str(uuid4()))
     text: str = ""
     image_bytes: bytes | None = None
     image_ext: str = "png"
