@@ -6,7 +6,7 @@ import re
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import fitz
 from docx.oxml import OxmlElement
@@ -14,6 +14,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches
 from src.adapters.pdf_edit_adapter import PDFEditAdapter
 from src.adapters.pdf_adapter import PDFAdapter
+from src.core.pdf_security import PDFInvalidPasswordError, PDFPasswordRequiredError
 
 
 MISSING_PILLOW_MSG = (
@@ -38,6 +39,47 @@ class PDFService:
         """
         self._pdf_adapter = pdf_adapter or PDFAdapter()
         self._pdf_edit_adapter = pdf_edit_adapter or PDFEditAdapter()
+        self._password_provider: Callable[[Path, bool], str | None] | None = None
+        self._password_cache: dict[Path, str] = {}
+
+    def set_password_provider(self, provider: Callable[[Path, bool], str | None] | None) -> None:
+        """Configura un proveedor de contraseñas para PDFs protegidos."""
+        self._password_provider = provider
+
+    def clear_password_cache(self) -> None:
+        """Limpia las contraseñas cacheadas para PDFs protegidos."""
+        self._password_cache.clear()
+
+    def _request_password(self, input_path: Path, retry: bool) -> str:
+        if self._password_provider is None:
+            raise PDFInvalidPasswordError(input_path) if retry else PDFPasswordRequiredError(input_path)
+
+        candidate = self._password_provider(input_path, retry)
+        if candidate is None or not candidate.strip():
+            raise PDFInvalidPasswordError(input_path) if retry else PDFPasswordRequiredError(input_path)
+        password = candidate.strip()
+        self._password_cache[input_path] = password
+        return password
+
+    def _open_reader(self, input_path: Path):
+        password = self._password_cache.get(input_path)
+        while True:
+            try:
+                return self._pdf_adapter.reader(input_path, password=password)
+            except PDFPasswordRequiredError:
+                password = self._request_password(input_path, retry=False)
+            except PDFInvalidPasswordError:
+                password = self._request_password(input_path, retry=True)
+
+    def _open_document(self, input_path: Path) -> fitz.Document:
+        password = self._password_cache.get(input_path)
+        while True:
+            try:
+                return self._pdf_edit_adapter.open_document(input_path, password=password)
+            except PDFPasswordRequiredError:
+                password = self._request_password(input_path, retry=False)
+            except PDFInvalidPasswordError:
+                password = self._request_password(input_path, retry=True)
 
     def _image_extraction_available(self) -> bool:
         """Verifica si la librería Pillow está disponible para extracción de imágenes."""
@@ -54,7 +96,7 @@ class PDFService:
         :param input_path: Ruta al archivo PDF.
         :return: Cantidad de páginas.
         """
-        reader = self._pdf_adapter.reader(input_path)
+        reader = self._open_reader(input_path)
         return len(reader.pages)
 
     def merge_pdfs(self, input_paths: Iterable[Path], output_path: Path) -> Path:
@@ -66,7 +108,7 @@ class PDFService:
         """
         writer = self._pdf_adapter.writer()
         for path in input_paths:
-            reader = self._pdf_adapter.reader(path)
+            reader = self._open_reader(path)
             for page in reader.pages:
                 writer.add_page(page)
         with output_path.open("wb") as f:
@@ -89,7 +131,7 @@ class PDFService:
         :param end_page: Página final.
         :return: Lista de rutas de los archivos generados.
         """
-        reader = self._pdf_adapter.reader(input_path)
+        reader = self._open_reader(input_path)
         total_pages = len(reader.pages)
         if total_pages == 0:
             return []
@@ -124,7 +166,7 @@ class PDFService:
         :param num_parts: Número de partes deseadas.
         :return: Lista de rutas de los archivos generados.
         """
-        reader = self._pdf_adapter.reader(input_path)
+        reader = self._open_reader(input_path)
         total_pages = len(reader.pages)
         if total_pages == 0:
             return []
@@ -215,7 +257,7 @@ class PDFService:
         :param ranges_input: Cadena con los rangos (ej: '2-14, 16-18').
         :return: Lista de archivos generados.
         """
-        reader = self._pdf_adapter.reader(input_path)
+        reader = self._open_reader(input_path)
         total_pages = len(reader.pages)
         if total_pages == 0:
             return []
@@ -239,7 +281,7 @@ class PDFService:
 
     def extract_text(self, input_path: Path) -> str:
         """Extrae todo el texto plano de un PDF."""
-        reader = self._pdf_adapter.reader(input_path)
+        reader = self._open_reader(input_path)
         text_parts: list[str] = []
         for page in reader.pages:
             text_parts.append(page.extract_text() or "")
@@ -254,7 +296,7 @@ class PDFService:
         """
         self._ensure_image_support()
 
-        reader = self._pdf_adapter.reader(input_path)
+        reader = self._open_reader(input_path)
         output_dir.mkdir(parents=True, exist_ok=True)
         images_dir = output_dir / "images"
         images_dir.mkdir(parents=True, exist_ok=True)
@@ -323,7 +365,7 @@ class PDFService:
         """Conversión básica a Word extrayendo texto e imágenes secuencialmente."""
         from docx import Document
 
-        reader = self._pdf_adapter.reader(input_path)
+        reader = self._open_reader(input_path)
         document = Document()
 
         has_any_text = False
@@ -565,7 +607,7 @@ class PDFService:
 
     def is_text_based_pdf(self, input_path: Path) -> bool:
         """Verifica si un PDF tiene capa de texto extraíble."""
-        reader = self._pdf_adapter.reader(input_path)
+        reader = self._open_reader(input_path)
         for page in reader.pages:
             if (page.extract_text() or "").strip():
                 return True
@@ -618,7 +660,7 @@ class PDFService:
         if not search_text.strip():
             raise ValueError("Debes indicar el texto a buscar.")
 
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         replacements = 0
         try:
             for page in document:
@@ -652,7 +694,7 @@ class PDFService:
         if not text.strip():
             raise ValueError("El texto a agregar no puede estar vacío.")
 
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         try:
             if page_number < 1 or page_number > len(document):
                 raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
@@ -676,7 +718,7 @@ class PDFService:
         if not signer_name.strip():
             raise ValueError("Debes indicar el nombre del firmante.")
 
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         try:
             target_page_number = page_number or len(document)
             if target_page_number < 1 or target_page_number > len(document):
@@ -713,7 +755,7 @@ class PDFService:
 
     def render_pdf_page_preview(self, input_path: Path, page_number: int = 1, zoom: float = 1.2) -> bytes:
         """Renderiza una página de PDF como PNG para previsualización en UI."""
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         try:
             if page_number < 1 or page_number > len(document):
                 raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
@@ -726,7 +768,7 @@ class PDFService:
 
     def extract_text_from_page(self, input_path: Path, page_number: int = 1) -> str:
         """Extrae texto de una página específica para vista previa."""
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         try:
             if page_number < 1 or page_number > len(document):
                 raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
@@ -736,7 +778,7 @@ class PDFService:
 
     def get_page_size(self, input_path: Path, page_number: int = 1) -> tuple[float, float]:
         """Obtiene ancho/alto de una página PDF en puntos."""
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         try:
             if page_number < 1 or page_number > len(document):
                 raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
@@ -760,7 +802,7 @@ class PDFService:
         if not image_path.exists():
             raise FileNotFoundError(f"No existe la imagen: {image_path}")
 
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         try:
             if page_number < 1 or page_number > len(document):
                 raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
@@ -788,7 +830,7 @@ class PDFService:
         if not replacement_text.strip():
             raise ValueError("El texto de reemplazo no puede estar vacío.")
 
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         try:
             if page_number < 1 or page_number > len(document):
                 raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")
@@ -829,7 +871,7 @@ class PDFService:
         if not signer_name.strip():
             raise ValueError("Debes indicar el nombre del firmante.")
 
-        document = self._pdf_edit_adapter.open_document(input_path)
+        document = self._open_document(input_path)
         try:
             if page_number < 1 or page_number > len(document):
                 raise ValueError(f"Página inválida: {page_number}. Rango permitido: 1-{len(document)}")

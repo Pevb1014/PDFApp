@@ -7,7 +7,7 @@ import sys
 import tempfile
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 
 from src.services.file_service import FileService
 from src.services.pdf_service import PDFService
@@ -42,6 +42,7 @@ class MainWindow(ttk.Frame):
         self.pdf_service = pdf_service
         self.viewer_service = viewer_service
         self.loaded_files: list[Path] = []
+        self.pdf_service.set_password_provider(self._ask_pdf_password)
         self.status_var = tk.StringVar(value="Listo para procesar PDFs")
         self.pdf_info_var = tk.StringVar(value="Selecciona un PDF de la lista")
         self.preview_current_pdf: Path | None = None
@@ -53,6 +54,15 @@ class MainWindow(ttk.Frame):
         self._build_ui()
         self._enable_fullscreen_on_start()
         self.master.protocol("WM_DELETE_WINDOW", self._on_main_close)
+
+    def _ask_pdf_password(self, input_path: Path, retry: bool) -> str | None:
+        """Solicita contraseña para abrir un PDF protegido."""
+        prompt = (
+            f"La contraseña para '{input_path.name}' es incorrecta.\nInténtalo de nuevo:"
+            if retry
+            else f"El PDF '{input_path.name}' está protegido.\nIngresa la contraseña:"
+        )
+        return simpledialog.askstring("PDF protegido", prompt, parent=self.master, show="*")
 
     def _enable_fullscreen_on_start(self) -> None:
         try:

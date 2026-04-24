@@ -22,6 +22,15 @@ def _make_pdf(path: Path, pages: int, width: int = 200) -> None:
         writer.write(f)
 
 
+def _make_encrypted_pdf(path: Path, password: str, pages: int = 1) -> None:
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=200, height=200)
+    writer.encrypt(password)
+    with path.open("wb") as f:
+        writer.write(f)
+
+
 def _make_text_pdf(path: Path, text: str) -> None:
     doc = fitz.open()
     page = doc.new_page()
@@ -99,6 +108,24 @@ def test_get_total_pages(tmp_path: Path) -> None:
 
     service = PDFService()
     assert service.get_total_pages(input_pdf) == 7
+
+
+def test_get_total_pages_with_password_protected_pdf(tmp_path: Path) -> None:
+    secured_pdf = tmp_path / "secure.pdf"
+    _make_encrypted_pdf(secured_pdf, password="1234", pages=2)
+
+    service = PDFService()
+    service.set_password_provider(lambda _path, _retry: "1234")
+    assert service.get_total_pages(secured_pdf) == 2
+
+
+def test_get_total_pages_raises_when_password_is_missing(tmp_path: Path) -> None:
+    secured_pdf = tmp_path / "secure.pdf"
+    _make_encrypted_pdf(secured_pdf, password="secreta", pages=1)
+
+    service = PDFService()
+    with pytest.raises(RuntimeError):
+        service.get_total_pages(secured_pdf)
 
 
 def test_extract_multiple_ranges_generates_one_pdf_per_range(tmp_path: Path) -> None:
