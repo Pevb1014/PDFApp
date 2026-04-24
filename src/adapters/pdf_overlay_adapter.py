@@ -56,8 +56,21 @@ class PDFOverlayAdapter:
                         color=color,
                     )
                 elif item.kind in {"signature_image", "signature_draw", "image_add"} and item.image_bytes:
-                    stream = io.BytesIO(item.image_bytes)
-                    page.insert_image(rect, stream=stream.getvalue(), keep_proportion=True)
+                    stream = io.BytesIO(item.image_bytes).getvalue()
+                    if item.kind in {"signature_image", "signature_draw"}:
+                        try:
+                            pix = fitz.Pixmap(stream)
+                            img_w = max(1, pix.width)
+                            img_h = max(1, pix.height)
+                            scale = min(rect.width / img_w, rect.height / img_h)
+                            target_w = img_w * scale
+                            target_h = img_h * scale
+                            target_rect = fitz.Rect(rect.x0, rect.y0, rect.x0 + target_w, rect.y0 + target_h)
+                            page.insert_image(target_rect, stream=stream, keep_proportion=False)
+                        except Exception:
+                            page.insert_image(rect, stream=stream, keep_proportion=True)
+                    else:
+                        page.insert_image(rect, stream=stream, keep_proportion=True)
 
             doc.save(str(output_pdf))
         return output_pdf
