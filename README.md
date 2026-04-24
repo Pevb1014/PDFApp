@@ -54,6 +54,7 @@ pip install pyinstaller
 ```bash
 pyinstaller --noconfirm --clean --onefile --windowed --name PDFProcessor main.py
 ```
+> Recomendado: usar `python build.py` para aplicar la configuración completa del archivo `PDFProcessor.spec` (incluye módulos PyQt6 para el editor avanzado).
 3. El ejecutable quedará en:
 - `dist/PDFProcessor.exe`
 
@@ -62,6 +63,7 @@ pyinstaller --noconfirm --clean --onefile --windowed --name PDFProcessor main.py
 - Mantén el acceso a recursos centralizado en `src/core/config.py`.
 - Si agregas dependencias nativas (OCR/firmas), declara `--add-data` y/o `--hidden-import` en PyInstaller.
 - Para extracción de imágenes, incluye Pillow en el build (ya está en `requirements.txt`).
+- Para previsualización de Word con `docx2pdf` en Windows, el equipo destino debe tener Microsoft Word instalado.
 
 ## MVP implementado
 - **Interfaz Moderna**: UI renovada con estilos personalizados, iconos y disposición mejorada.

@@ -747,7 +747,7 @@ class MainWindow(ttk.Frame):
             messagebox.showwarning("Editar PDF", "Selecciona y visualiza un PDF para editar.")
             return
         try:
-            subprocess.Popen([sys.executable, "-m", "src.ui.pdf_editor_app", str(self.preview_current_pdf)])
+            self._launch_qt_editor(self.preview_current_pdf)
             self._set_status(f"Editor PDF abierto para {self.preview_current_pdf.name}")
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
@@ -816,11 +816,17 @@ class MainWindow(ttk.Frame):
             return
 
         try:
-            subprocess.Popen([sys.executable, "-m", "src.ui.pdf_editor_app", str(input_pdf)])
+            self._launch_qt_editor(input_pdf)
             self._set_status(f"Editor PDF abierto para {input_pdf.name}")
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
             self._set_status("Error al abrir editor PDF")
+
+    def _launch_qt_editor(self, input_pdf: Path) -> None:
+        if getattr(sys, "frozen", False):
+            subprocess.Popen([sys.executable, "--qt-editor", str(input_pdf)])
+        else:
+            subprocess.Popen([sys.executable, "-m", "src.ui.pdf_editor_app", str(input_pdf)])
 
     def _open_pdf_edit_dialog(self, input_pdf: Path) -> None:
         """Diálogo gráfico para visualizar y editar el PDF seleccionado."""

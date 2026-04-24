@@ -21,7 +21,13 @@ a = Analysis(
         'fitz',  # PyMuPDF
         'pdfplumber',
         'docx.enum.text',
-        'docx.oxml.ns'
+        'docx.oxml.ns',
+        'PyQt6',
+        'PyQt6.QtCore',
+        'PyQt6.QtGui',
+        'PyQt6.QtWidgets',
+        'src.ui.pdf_editor_app',
+        'src.ui.pdf_editor_qt'
     ],
     hookspath=[],
     hooksconfig={},

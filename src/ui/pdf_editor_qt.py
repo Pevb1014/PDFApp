@@ -56,7 +56,7 @@ class DrawSignatureDialog(QDialog):
         ba = QByteArray()
         buffer = QBuffer(ba)
         buffer.open(QBuffer.OpenModeFlag.WriteOnly)
-        self.canvas.image.save(buffer, "PNG")
+        self.canvas.signature_image().save(buffer, "PNG")
         buffer.close()
         return bytes(ba)
 
@@ -66,7 +66,7 @@ class SignatureCanvas(QWidget):
         super().__init__()
         self.setFixedSize(400, 160)
         self.image = QImage(400, 160, QImage.Format.Format_ARGB32)
-        self.image.fill(Qt.GlobalColor.white)
+        self.image.fill(Qt.GlobalColor.transparent)
         self._last: QPoint | None = None
 
     def mousePressEvent(self, event):  # type: ignore[override]
@@ -85,7 +85,28 @@ class SignatureCanvas(QWidget):
 
     def paintEvent(self, event):  # type: ignore[override]
         painter = QPainter(self)
+        painter.fillRect(self.rect(), Qt.GlobalColor.white)
         painter.drawImage(0, 0, self.image)
+
+    def signature_image(self) -> QImage:
+        # Recorta automáticamente para eliminar área transparente sobrante.
+        min_x, min_y = self.image.width(), self.image.height()
+        max_x, max_y = -1, -1
+        for y in range(self.image.height()):
+            for x in range(self.image.width()):
+                if QColor(self.image.pixel(x, y)).alpha() > 0:
+                    min_x = min(min_x, x)
+                    min_y = min(min_y, y)
+                    max_x = max(max_x, x)
+                    max_y = max(max_y, y)
+        if max_x < 0 or max_y < 0:
+            return self.image
+        margin = 4
+        x0 = max(0, min_x - margin)
+        y0 = max(0, min_y - margin)
+        x1 = min(self.image.width() - 1, max_x + margin)
+        y1 = min(self.image.height() - 1, max_y + margin)
+        return self.image.copy(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
 
 
 class OverlayTextItem(QGraphicsTextItem):
