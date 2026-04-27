@@ -12,6 +12,9 @@ from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 from src.services.file_service import FileService
 from src.services.pdf_service import PDFService
 from src.services.viewer_service import ViewerService
+from src.core.batch_processor import BatchSigningProcessor
+from src.ui.preview import SignaturePreviewWindow
+from src.ui.signer_panel import SignerPanel
 from src.ui.components import create_button
 from src.utils.helpers import ensure_pdf_extension, human_error
 
@@ -49,6 +52,7 @@ class MainWindow(ttk.Frame):
         self.preview_images: list[tk.PhotoImage] = []
         self.preview_tab_display_name = "👁️ Vista"
         self.word_preview_cache: dict[Path, tuple[float, Path, Path]] = {}
+        self._batch_sign_processor = BatchSigningProcessor()
 
         self._configure_styles()
         self._build_ui()
@@ -170,7 +174,7 @@ class MainWindow(ttk.Frame):
         
         create_button(row2, "📝 PDF a Word / Extraer", self._extract_content).grid(row=0, column=0, sticky="ew", padx=5)
         create_button(row2, "📘 Word a PDF", self._word_to_pdf).grid(row=0, column=1, sticky="ew", padx=5)
-        create_button(row2, "✍️ Editar / Firmar PDF", self._edit_pdf).grid(row=0, column=2, sticky="ew", padx=5)
+        create_button(row2, "🖊️ Firmar todos PDFs", self._sign_all_pdfs, style="Accent.TButton").grid(row=0, column=2, sticky="ew", padx=5)
 
         # Información del PDF seleccionado
         info_frame = ttk.Frame(content_area, padding=(0, 5))
@@ -468,6 +472,79 @@ class MainWindow(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Error", human_error(exc))
             self._set_status("Error en el proceso")
+
+    def _sign_all_pdfs(self) -> None:
+        """Firma todos los PDFs cargados usando reglas por keyword."""
+        pdf_files = [f for f in self.loaded_files if f.suffix.lower() == ".pdf"]
+        if not pdf_files:
+            messagebox.showwarning("Firmar", "Carga al menos un PDF para iniciar firma masiva.")
+            return
+
+        panel = SignerPanel(self.master)
+        self.master.wait_window(panel)
+        signers = panel.result
+        if not signers:
+            return
+
+        try:
+            previews = self._batch_sign_processor.build_preview(pdf_files, signers)
+        except Exception as exc:
+            messagebox.showerror("Error", f"No se pudo generar la vista previa: {human_error(exc)}")
+            return
+
+        preview_window = SignaturePreviewWindow(self.master, previews)
+        self.master.wait_window(preview_window)
+        if not preview_window.result:
+            self._set_status("Firma masiva cancelada por el usuario")
+            return
+
+        output_dir = filedialog.askdirectory(title="Carpeta de salida para PDFs firmados")
+        if not output_dir:
+            return
+
+        overwrite = messagebox.askyesno(
+            "Sobrescribir",
+            "¿Deseas sobrescribir los archivos originales?\n(Selecciona 'No' para crear *_signed.pdf)",
+        )
+
+        progress_dialog = tk.Toplevel(self.master)
+        progress_dialog.title("Procesando firmas")
+        progress_dialog.geometry("420x120")
+        ttk.Label(progress_dialog, text="Aplicando firmas, por favor espera...").pack(pady=(12, 8))
+        progress_var = tk.DoubleVar(value=0)
+        progress_bar = ttk.Progressbar(progress_dialog, orient=tk.HORIZONTAL, maximum=max(len(pdf_files), 1), variable=progress_var)
+        progress_bar.pack(fill=tk.X, padx=14, pady=4)
+        progress_label = ttk.Label(progress_dialog, text="0/0")
+        progress_label.pack(pady=(4, 8))
+
+        def _on_progress(current: int, total: int, filename: str) -> None:
+            progress_var.set(current)
+            progress_label.config(text=f"{current}/{total} · {filename}")
+            progress_dialog.update_idletasks()
+
+        try:
+            result = self._batch_sign_processor.sign_documents(
+                pdf_paths=pdf_files,
+                signers=signers,
+                output_dir=Path(output_dir),
+                overwrite=overwrite,
+                progress_callback=_on_progress,
+            )
+        finally:
+            progress_dialog.destroy()
+
+        summary = (
+            f"{result.total_signatures} firmas aplicadas en {result.processed_documents}/{result.total_documents} documentos."
+        )
+        if result.errors:
+            summary += "\n\nErrores:\n- " + "\n- ".join(result.errors)
+
+        if result.errors:
+            messagebox.showwarning("Firma masiva finalizada con incidencias", summary)
+            self._set_status("Firma masiva completada con incidencias")
+        else:
+            messagebox.showinfo("Firma masiva completada", summary)
+            self._set_status("Firma masiva completada correctamente")
 
     def _process_batch_extraction(self, mode: str) -> None:
         """Procesa todos los PDFs cargados (ignora archivos Word)."""

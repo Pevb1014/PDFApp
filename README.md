@@ -70,6 +70,7 @@ pyinstaller --noconfirm --clean --onefile --windowed --name PDFProcessor main.py
 - **Procesamiento por Lotes**: Extraer contenido o convertir a Word múltiples PDFs simultáneamente.
 - **Conversión Inversa**: Convertir uno o varios archivos Word (.docx) a PDF.
 - **Edición de PDF**: Reemplazar texto existente, agregar contenido y añadir firma visible (texto e imagen opcional).
+- **Firma Masiva Inteligente**: Firmar todos los PDFs cargados con múltiples firmantes por palabra clave y vista previa de zonas detectadas.
 - Cargar uno o múltiples PDFs.
 - Listado de PDFs cargados.
 - Reordenar manualmente la lista (Subir/Bajar) para decidir un orden exacto de unión.
@@ -202,3 +203,21 @@ Notas:
 - La edición genera un PDF nuevo (no sobrescribe el original automáticamente).
 - Para firma con imagen se aceptan formatos comunes (`.png`, `.jpg`, `.jpeg`, `.bmp`).
 - En la visualización de Word, la app usa `docx2pdf` para generar una vista temporal y renderizarla como PDF en la pestaña integrada.
+
+## Firma masiva automática por keywords
+La acción **"🖊️ Firmar todos PDFs"** permite procesar todos los PDFs cargados en lote:
+
+1. Configura múltiples firmantes con **Add Signer**.
+2. Cada regla define:
+   - `keyword` (texto a buscar en el PDF),
+   - tipo de firma (`image`, `text`, `draw`),
+   - contenido de firma.
+3. La app analiza cada página con heurísticas:
+   - busca líneas horizontales cercanas al keyword (prioridad 1),
+   - si no encuentra, prueba espacios libres arriba/abajo/derecha (prioridad 2),
+   - evita superposición con texto existente.
+4. Se muestra una vista previa con zonas detectadas por documento.
+5. Tras confirmar, aplica todas las firmas y muestra resumen final:
+   - firmas aplicadas,
+   - documentos procesados,
+   - errores por archivo (si los hay).
