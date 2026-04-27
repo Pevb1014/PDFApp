@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Callable
 
@@ -37,13 +38,19 @@ class BatchSigningProcessor:
         progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> BatchSigningResult:
         output_dir.mkdir(parents=True, exist_ok=True)
+        signed_dir = output_dir / "firmados"
+        unsigned_dir = output_dir / "sin_firma"
+        signed_dir.mkdir(parents=True, exist_ok=True)
+        unsigned_dir.mkdir(parents=True, exist_ok=True)
 
         processed = 0
         total_signatures = 0
         output_files: list[str] = []
+        unsigned_files: list[str] = []
         errors: list[str] = []
 
         for index, pdf_path in enumerate(pdf_paths, start=1):
+            doc: fitz.Document | None = None
             try:
                 doc = fitz.open(str(pdf_path))
                 placements = []
@@ -55,22 +62,42 @@ class BatchSigningProcessor:
                     signer = signers[placement.signer_index]
                     self._placer.place_signature(page, placement.rect, signer)
 
-                output_path = pdf_path if overwrite else output_dir / f"{pdf_path.stem}_signed.pdf"
-                doc.save(str(output_path))
+                if overwrite and placements:
+                    output_path = pdf_path
+                    doc.save(str(output_path))
+                    output_files.append(str(output_path))
+                elif placements:
+                    output_path = signed_dir / f"{pdf_path.stem}_signed.pdf"
+                    doc.save(str(output_path))
+                    output_files.append(str(output_path))
+                else:
+                    output_path = unsigned_dir / pdf_path.name
+                    doc.close()
+                    doc = None
+                    shutil.copy2(pdf_path, output_path)
+                    unsigned_files.append(str(output_path))
+                    processed += 1
+                    if progress_callback:
+                        progress_callback(index, len(pdf_paths), pdf_path.name)
+                    continue
                 doc.close()
+                doc = None
 
                 processed += 1
                 total_signatures += len(placements)
-                output_files.append(str(output_path))
                 if progress_callback:
                     progress_callback(index, len(pdf_paths), pdf_path.name)
             except Exception as exc:
                 errors.append(f"{pdf_path.name}: {exc}")
+            finally:
+                if doc is not None:
+                    doc.close()
 
         return BatchSigningResult(
             total_documents=len(pdf_paths),
             processed_documents=processed,
             total_signatures=total_signatures,
             output_files=output_files,
+            unsigned_files=unsigned_files,
             errors=errors,
         )

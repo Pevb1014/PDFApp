@@ -36,4 +36,5 @@ class BatchSigningResult:
     processed_documents: int
     total_signatures: int
     output_files: list[str]
+    unsigned_files: list[str]
     errors: list[str]

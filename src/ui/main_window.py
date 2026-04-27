@@ -502,11 +502,6 @@ class MainWindow(ttk.Frame):
         if not output_dir:
             return
 
-        overwrite = messagebox.askyesno(
-            "Sobrescribir",
-            "¿Deseas sobrescribir los archivos originales?\n(Selecciona 'No' para crear *_signed.pdf)",
-        )
-
         progress_dialog = tk.Toplevel(self.master)
         progress_dialog.title("Procesando firmas")
         progress_dialog.geometry("420x120")
@@ -527,7 +522,7 @@ class MainWindow(ttk.Frame):
                 pdf_paths=pdf_files,
                 signers=signers,
                 output_dir=Path(output_dir),
-                overwrite=overwrite,
+                overwrite=False,
                 progress_callback=_on_progress,
             )
         finally:
@@ -536,6 +531,13 @@ class MainWindow(ttk.Frame):
         summary = (
             f"{result.total_signatures} firmas aplicadas en {result.processed_documents}/{result.total_documents} documentos."
         )
+        summary += (
+            f"\n\nCarpetas generadas:\n"
+            f"- Firmados: {Path(output_dir) / 'firmados'}\n"
+            f"- Sin firma: {Path(output_dir) / 'sin_firma'}"
+        )
+        if result.unsigned_files:
+            summary += f"\n\nDocumentos sin zona válida: {len(result.unsigned_files)}"
         if result.errors:
             summary += "\n\nErrores:\n- " + "\n- ".join(result.errors)
 

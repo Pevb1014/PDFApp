@@ -210,7 +210,7 @@ La acción **"🖊️ Firmar todos PDFs"** permite procesar todos los PDFs carga
 1. Configura múltiples firmantes con **Add Signer**.
 2. Cada regla define:
    - `keyword` (texto a buscar en el PDF),
-   - tipo de firma (`image`, `text`, `draw`),
+   - tipo de firma (`image`, `text`, `draw`) seleccionado desde lista desplegable,
    - contenido de firma.
 3. La app analiza cada página con heurísticas:
    - busca líneas horizontales cercanas al keyword (prioridad 1),
@@ -221,3 +221,6 @@ La acción **"🖊️ Firmar todos PDFs"** permite procesar todos los PDFs carga
    - firmas aplicadas,
    - documentos procesados,
    - errores por archivo (si los hay).
+6. En la carpeta destino elegida se crean automáticamente:
+   - `firmados/` → PDFs con al menos una firma aplicada,
+   - `sin_firma/` → PDFs donde no se detectó ninguna zona válida.
